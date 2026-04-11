@@ -384,10 +384,11 @@ body {
     border-left: 4px solid #ea8c5c;
     padding-left: 12px;
 }
+/* 歌曲列表：限制高度为 6.5 行（约 455px），超出滚动 */
 .song-list {
     flex: 1;
     overflow-y: auto;
-    max-height: none;
+    max-height: 455px; /* 6.5行 * 70px ≈ 455px */
 }
 .song-item {
     display: flex;
@@ -572,6 +573,7 @@ body {
     gap: 8px;
     margin-bottom: 12px;
 }
+/* 进度条深/浅色样式 */
 .progress-bar {
     flex: 1;
     height: 4px;
@@ -587,6 +589,10 @@ body {
     background: var(--progress-thumb);
     border-radius: 50%;
     cursor: pointer;
+}
+/* 已播放部分为深色，未播放部分为浅色 */
+.progress-bar {
+    background: linear-gradient(to right, var(--progress-thumb) 0%, var(--progress-thumb) var(--progress-percent, 0%), var(--progress-bg) var(--progress-percent, 0%), var(--progress-bg) 100%);
 }
 .time-current, .time-duration {
     font-size: 0.7rem;
