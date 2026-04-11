@@ -9,6 +9,8 @@
     <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- 添加 ID3 标签写入库，用于下载时嵌入封面图片 -->
+    <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@4.4.0/dist/browser-id3-writer.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body :class="currentTheme">
@@ -134,7 +136,7 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 10 个 API 自动故障转移 · 空格键播放/暂停
+            🎧 10 个 API 自动故障转移 · 空格键播放/暂停 · 下载带封面MP3
         </div>
     </div>
 
