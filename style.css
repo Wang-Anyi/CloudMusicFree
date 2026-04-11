@@ -1395,3 +1395,12 @@ input:checked + .slider:before {
     gap: 10px;
     margin-top: 12px;
 }
+
+/* 逐字歌词高亮 */
+.word-span {
+    transition: color 0.05s linear;
+}
+.word-span.active {
+    color: #ea8c5c;
+    text-shadow: 0 0 2px currentColor;
+}
