@@ -27,6 +27,7 @@
     --ctrl-btn-color: #4f2a18;
     --bg-blur-amount: 0px;
     --card-opacity: 1;
+    --mask-opacity: 0.3; /* 默认遮罩透明度 30% */
 }
 
 /* 暗夜黑主题 */
@@ -1082,34 +1083,34 @@ input:checked + .slider:before {
     transform: translateX(26px);
 }
 
-/* 卡片背景模糊化开关效果 */
-.blur-enabled .left-panel,
-.blur-enabled .player-card,
-.blur-enabled .lyrics-card,
-.blur-enabled .history-card {
-    background: rgba(255, 255, 255, 0.3);
+/* 卡片遮罩层（仅在模糊开关开启时生效） */
+.blur-enabled .left-panel::before,
+.blur-enabled .player-card::before,
+.blur-enabled .lyrics-card::before,
+.blur-enabled .history-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, var(--mask-opacity));
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 0;
 }
-.theme-dark.blur-enabled .left-panel,
-.theme-dark.blur-enabled .player-card,
-.theme-dark.blur-enabled .lyrics-card,
-.theme-dark.blur-enabled .history-card {
-    background: rgba(0, 0, 0, 0.5);
+.theme-dark.blur-enabled .left-panel::before,
+.theme-dark.blur-enabled .player-card::before,
+.theme-dark.blur-enabled .lyrics-card::before,
+.theme-dark.blur-enabled .history-card::before {
+    background: rgba(0, 0, 0, var(--mask-opacity));
 }
-.theme-ocean.blur-enabled .left-panel,
-.theme-ocean.blur-enabled .player-card,
-.theme-ocean.blur-enabled .lyrics-card,
-.theme-ocean.blur-enabled .history-card {
-    background: rgba(224, 242, 241, 0.5);
+/* 确保卡片内容在遮罩之上 */
+.left-panel, .player-card, .lyrics-card, .history-card {
+    position: relative;
+    overflow: hidden;
 }
-.theme-purple.blur-enabled .left-panel,
-.theme-purple.blur-enabled .player-card,
-.theme-purple.blur-enabled .lyrics-card,
-.theme-purple.blur-enabled .history-card {
-    background: rgba(243, 229, 245, 0.5);
-}
-.theme-sunset.blur-enabled .left-panel,
-.theme-sunset.blur-enabled .player-card,
-.theme-sunset.blur-enabled .lyrics-card,
-.theme-sunset.blur-enabled .history-card {
-    background: rgba(255, 243, 224, 0.5);
+.left-panel > *, .player-card > *, .lyrics-card > *, .history-card > * {
+    position: relative;
+    z-index: 1;
 }
