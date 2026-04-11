@@ -482,14 +482,12 @@ createApp({
                     audio.src = '';
                     await new Promise(r => setTimeout(r, 10));
                     audio.src = musicUrl;
-                    // 等待音频可以播放
                     await new Promise((resolve) => {
                         const canPlayHandler = () => {
                             audio.removeEventListener('canplay', canPlayHandler);
                             resolve();
                         };
                         audio.addEventListener('canplay', canPlayHandler, { once: true });
-                        // 超时保护（3秒后强制resolve）
                         setTimeout(resolve, 3000);
                     });
                     await audio.play();
@@ -849,7 +847,6 @@ createApp({
         
         const onAudioError = (e) => { 
             console.error('Audio error:', e);
-            // 尝试重试（可选：自动切换下一首？这里只提示）
             if (playErrorMsg.value !== '播放失败，可能是音频链接无效') {
                 playErrorMsg.value = '播放失败，可能是音频链接无效';
             }
@@ -1014,6 +1011,17 @@ createApp({
             document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100);
         };
         
+        // ---------- 反馈与改进弹窗 ----------
+        const openFeedbackModal = () => {
+            const modal = document.getElementById('feedbackModal');
+            if (modal) modal.style.display = 'flex';
+        };
+        
+        const closeFeedbackModal = () => {
+            const modal = document.getElementById('feedbackModal');
+            if (modal) modal.style.display = 'none';
+        };
+        
         const openSettingsModal = () => {
             const modal = document.getElementById('settingsModal');
             if (modal) modal.style.display = 'flex';
@@ -1066,6 +1074,14 @@ createApp({
                 if (closeBtn) closeBtn.onclick = closeSettingsModal;
                 settingsModal.onclick = (e) => { if (e.target === settingsModal) closeSettingsModal(); };
             }
+            const feedbackModal = document.getElementById('feedbackModal');
+            if (feedbackModal) {
+                const closeBtn = document.getElementById('closeFeedbackBtn');
+                const confirmBtn = document.getElementById('confirmFeedbackBtn');
+                if (closeBtn) closeBtn.onclick = closeFeedbackModal;
+                if (confirmBtn) confirmBtn.onclick = closeFeedbackModal;
+                feedbackModal.onclick = (e) => { if (e.target === feedbackModal) closeFeedbackModal(); };
+            }
         };
         
         onMounted(() => {
@@ -1101,7 +1117,7 @@ createApp({
             currentTheme, openThemeModal, closeThemeModal, setTheme,
             bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, bodyBackgroundStyle,
             saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveMaskOpacity,
-            openSettingsModal, closeSettingsModal
+            openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal
         };
     }
 }).mount('#app');
