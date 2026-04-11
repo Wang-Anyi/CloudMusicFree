@@ -279,9 +279,29 @@ body {
     background: rgba(30, 20, 15, 0.85);
     backdrop-filter: blur(12px);
     border-radius: 40px;
-    padding: 24px 20px;
+    padding: 20px;
     color: #fef2e6;
     box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+}
+.player-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.fullscreen-btn {
+    background: none;
+    border: none;
+    color: #fef2e6;
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 0 8px;
+    opacity: 0.7;
+    transition: 0.2s;
+}
+.fullscreen-btn:hover {
+    opacity: 1;
+    transform: scale(1.05);
 }
 .cover-large {
     width: 160px;
@@ -293,7 +313,7 @@ body {
     object-fit: cover;
 }
 .track-title {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
     font-weight: 700;
     text-align: center;
     white-space: nowrap;
@@ -528,4 +548,139 @@ body {
 .modal-btn.confirm:hover {
     background: #b83b1f;
     transform: translateY(-1px);
+}
+
+/* 全屏播放器样式 */
+.fullscreen-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: blur(20px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.fullscreen-container {
+    width: 90%;
+    max-width: 1300px;
+    height: 85%;
+    background: rgba(30, 20, 15, 0.9);
+    border-radius: 48px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding: 24px 32px;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+}
+.close-fullscreen {
+    position: absolute;
+    top: 20px;
+    right: 28px;
+    background: none;
+    border: none;
+    font-size: 2rem;
+    color: #fef2e6;
+    cursor: pointer;
+    z-index: 10;
+    opacity: 0.7;
+}
+.close-fullscreen:hover {
+    opacity: 1;
+}
+.fullscreen-content {
+    display: flex;
+    flex: 1;
+    gap: 48px;
+    overflow: hidden;
+    margin-top: 20px;
+}
+.fullscreen-cover {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.fullscreen-cover img {
+    width: 100%;
+    max-width: 400px;
+    border-radius: 32px;
+    box-shadow: 0 20px 35px rgba(0,0,0,0.4);
+    object-fit: cover;
+    aspect-ratio: 1;
+}
+.fullscreen-lyrics {
+    flex: 1.5;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.fullscreen-lyrics-header {
+    margin-bottom: 20px;
+    text-align: center;
+}
+.fullscreen-song {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #fef2e6;
+}
+.fullscreen-artist {
+    font-size: 1rem;
+    color: #d4bca8;
+    margin-top: 6px;
+}
+.fullscreen-lyrics-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 12px;
+}
+.fullscreen-lyric-line {
+    padding: 8px 16px;
+    font-size: 1rem;
+    color: #c0b0a0;
+    transition: 0.2s;
+    text-align: center;
+}
+.fullscreen-lyric-line.active {
+    color: #ea8c5c;
+    font-weight: bold;
+    font-size: 1.1rem;
+    background: rgba(234, 140, 92, 0.2);
+    border-radius: 40px;
+}
+.fullscreen-controls {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255,215,190,0.3);
+}
+.fullscreen-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+.fullscreen-progress .progress-bar {
+    flex: 1;
+}
+.fullscreen-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+@media (max-width: 768px) {
+    .fullscreen-content {
+        flex-direction: column;
+    }
+    .fullscreen-cover img {
+        max-width: 200px;
+    }
+    .fullscreen-song {
+        font-size: 1.2rem;
+    }
+    .fullscreen-lyric-line {
+        font-size: 0.85rem;
+    }
 }
