@@ -58,8 +58,8 @@ createApp({
         const bgImageUrl = ref('');
         const blurEnabled = ref(false);
         const bgBlur = ref(0);
-        const cardOpacity = ref(100);   // 卡片背景透明度百分比
-        const maskOpacity = ref(30);    // 卡片遮罩透明度百分比，默认30%
+        const cardOpacity = ref(100);
+        const maskOpacity = ref(30);
         
         // ---------- API 列表 ----------
         const API_LIST = [
@@ -248,7 +248,7 @@ createApp({
             }
         };
         
-        // ---------- 通用请求 ----------
+        // ---------- 通用请求函数（增加重试和更长超时）----------
         const requestWithFallback = async (urlPath, options = {}) => {
             const maxRetries = API_LIST.length;
             let lastError = null;
@@ -258,7 +258,7 @@ createApp({
                 const fullUrl = `${apiBase}${urlPath}`;
                 try {
                     const response = await axios.get(fullUrl, { 
-                        timeout: options.timeout || 10000,
+                        timeout: options.timeout || 15000,
                         ...options 
                     });
                     currentApiIndex = apiIndex;
@@ -331,7 +331,7 @@ createApp({
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[i];
                 try {
-                    const res = await axios.get(`${apiBase}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 10000 });
+                    const res = await axios.get(`${apiBase}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 12000 });
                     let songs = null;
                     if (res.data && res.data.result && res.data.result.songs) {
                         songs = res.data.result.songs;
@@ -398,7 +398,7 @@ createApp({
                 const apiBase = API_LIST[apiIndex];
                 const url = `${apiBase}/song/url?id=${songId}`;
                 try {
-                    const res = await axios.get(url, { timeout: 15000 });
+                    const res = await axios.get(url, { timeout: 20000 });
                     let musicUrl = null;
                     if (res.data && res.data.data && res.data.data[0] && res.data.data[0].url) {
                         musicUrl = res.data.data[0].url;
@@ -482,8 +482,15 @@ createApp({
                     audio.src = '';
                     await new Promise(r => setTimeout(r, 10));
                     audio.src = musicUrl;
+                    // 等待音频可以播放
                     await new Promise((resolve) => {
-                        audio.addEventListener('canplay', resolve, { once: true });
+                        const canPlayHandler = () => {
+                            audio.removeEventListener('canplay', canPlayHandler);
+                            resolve();
+                        };
+                        audio.addEventListener('canplay', canPlayHandler, { once: true });
+                        // 超时保护（3秒后强制resolve）
+                        setTimeout(resolve, 3000);
                     });
                     await audio.play();
                     isPlaying.value = true;
@@ -842,7 +849,10 @@ createApp({
         
         const onAudioError = (e) => { 
             console.error('Audio error:', e);
-            playErrorMsg.value = '播放失败，可能是音频链接无效'; 
+            // 尝试重试（可选：自动切换下一首？这里只提示）
+            if (playErrorMsg.value !== '播放失败，可能是音频链接无效') {
+                playErrorMsg.value = '播放失败，可能是音频链接无效';
+            }
             isPlaying.value = false;
             fullscreenIsPlaying.value = false;
         };
