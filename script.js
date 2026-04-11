@@ -35,7 +35,7 @@ createApp({
         let currentSongId = '';
         let currentSongArtist = '';
         
-        // 用于全屏播放器的歌单切换
+        // 歌单切换相关
         let currentPlaylistSongs = [];
         let currentPlaylistType = 'history';
         let currentPlaylistIndex = -1;
@@ -53,6 +53,11 @@ createApp({
         let fullscreenInterval = null;
         
         const currentTheme = ref('theme-default');
+        
+        // 设置相关
+        const userCookie = ref('');
+        const showAdvancedSettings = ref(false);
+        const cookieStatus = ref('');
         
         const API_LIST = [
             'https://meting-api-pi-one.vercel.app',
@@ -151,6 +156,48 @@ createApp({
             }
             document.body.className = currentTheme.value;
             console.log('[主题] 加载主题:', currentTheme.value);
+        };
+        
+        // ---------- 设置相关 ----------
+        const openSettingsModal = () => {
+            const modal = document.getElementById('settingsModal');
+            if (modal) modal.style.display = 'flex';
+        };
+        
+        const closeSettingsModal = () => {
+            const modal = document.getElementById('settingsModal');
+            if (modal) modal.style.display = 'none';
+        };
+        
+        const toggleAdvancedSettings = () => {
+            showAdvancedSettings.value = !showAdvancedSettings.value;
+        };
+        
+        const saveCookie = () => {
+            if (!userCookie.value.trim()) {
+                cookieStatus.value = '请输入 Cookie';
+                setTimeout(() => { if (cookieStatus.value === '请输入 Cookie') cookieStatus.value = ''; }, 3000);
+                return;
+            }
+            localStorage.setItem('netease_cookie', userCookie.value);
+            cookieStatus.value = 'Cookie 已保存，VIP 歌曲可播放';
+            setTimeout(() => { if (cookieStatus.value === 'Cookie 已保存，VIP 歌曲可播放') cookieStatus.value = ''; }, 3000);
+        };
+        
+        const clearCookie = () => {
+            localStorage.removeItem('netease_cookie');
+            userCookie.value = '';
+            cookieStatus.value = 'Cookie 已清除';
+            setTimeout(() => { if (cookieStatus.value === 'Cookie 已清除') cookieStatus.value = ''; }, 2000);
+        };
+        
+        const loadCookie = () => {
+            const saved = localStorage.getItem('netease_cookie');
+            if (saved) {
+                userCookie.value = saved;
+                cookieStatus.value = '已加载保存的 Cookie';
+                setTimeout(() => { if (cookieStatus.value === '已加载保存的 Cookie') cookieStatus.value = ''; }, 2000);
+            }
         };
         
         // ---------- 歌词滚动 ----------
@@ -379,13 +426,17 @@ createApp({
             loadingSearch.value = false;
         };
         
-        // ---------- 播放地址获取 ----------
+        // ---------- 获取播放地址（自动添加 Cookie）----------
         const getSongUrl = async (songId) => {
+            const savedCookie = localStorage.getItem('netease_cookie');
             const maxRetries = API_LIST.length;
             for (let i = 0; i < maxRetries; i++) {
                 const apiIndex = (currentApiIndex + i) % maxRetries;
                 const apiBase = API_LIST[apiIndex];
-                const url = `${apiBase}/song/url?id=${songId}`;
+                let url = `${apiBase}/song/url?id=${songId}`;
+                if (savedCookie) {
+                    url += `&cookie=${encodeURIComponent(savedCookie)}`;
+                }
                 try {
                     const res = await axios.get(url, { timeout: 15000 });
                     let musicUrl = null;
@@ -410,13 +461,17 @@ createApp({
             throw new Error('无法获取播放地址');
         };
         
-        // ---------- 歌曲详情 ----------
+        // ---------- 获取歌曲详情 ----------
         const getSongDetail = async (songId) => {
+            const savedCookie = localStorage.getItem('netease_cookie');
             const maxRetries = API_LIST.length;
             for (let i = 0; i < maxRetries; i++) {
                 const apiIndex = (currentApiIndex + i) % maxRetries;
                 const apiBase = API_LIST[apiIndex];
-                const url = `${apiBase}/song/detail?ids=${songId}`;
+                let url = `${apiBase}/song/detail?ids=${songId}`;
+                if (savedCookie) {
+                    url += `&cookie=${encodeURIComponent(savedCookie)}`;
+                }
                 try {
                     const res = await axios.get(url, { timeout: 8000 });
                     let songDetail = null;
@@ -710,7 +765,7 @@ createApp({
             await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`, true);
         };
         
-        // ---------- 上一曲/下一曲（主页和全屏共用）----------
+        // ---------- 上一曲/下一曲 ----------
         const playPrev = () => {
             if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
                 if (currentPlaylistIndex <= 0) {
@@ -932,12 +987,15 @@ createApp({
         onMounted(() => {
             loadTheme();
             loadPlaylists();
+            loadCookie();  // 加载保存的 Cookie
             nextTick(() => {
                 initModalEvents();
                 const fsModal = document.getElementById('fullscreenPlayer');
                 if (fsModal) fsModal.style.display = 'none';
                 const themeModal = document.getElementById('themeModal');
                 if (themeModal) themeModal.style.display = 'none';
+                const settingsModal = document.getElementById('settingsModal');
+                if (settingsModal) settingsModal.style.display = 'none';
                 showAnnouncement();
             });
             window.addEventListener('keydown', handleKeydown);
@@ -957,8 +1015,11 @@ createApp({
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
             fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
             fullscreenTogglePlayPause, fullscreenSeek,
-            playPrev, playNext,  // 主页和全屏共用的上一曲/下一曲
-            currentTheme, openThemeModal, closeThemeModal, setTheme
+            playPrev, playNext,
+            currentTheme, openThemeModal, closeThemeModal, setTheme,
+            // 设置相关
+            userCookie, showAdvancedSettings, cookieStatus,
+            openSettingsModal, closeSettingsModal, toggleAdvancedSettings, saveCookie, clearCookie
         };
     }
 }).mount('#app');
