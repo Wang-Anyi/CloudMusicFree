@@ -46,9 +46,10 @@ createApp({
         const fullscreenIsPlaying = ref(false);
         let fullscreenInterval = null;
         
-        const isDarkMode = ref(false);
+        // 当前主题（默认为 theme-default）
+        const currentTheme = ref('theme-default');
         
-        // ========== API 列表（共 10 个）==========
+        // ========== API 列表 ==========
         const API_LIST = [
             'https://meting-api-pi-one.vercel.app',
             'https://api-enhanced-delta-six.vercel.app',
@@ -103,28 +104,28 @@ createApp({
         };
         
         // ---------- 主题切换 ----------
-        const toggleTheme = () => {
-            isDarkMode.value = !isDarkMode.value;
-            if (isDarkMode.value) {
-                document.body.classList.add('dark-mode');
-            } else {
-                document.body.classList.remove('dark-mode');
-            }
-            localStorage.setItem('darkMode', isDarkMode.value);
+        const openThemeModal = () => {
+            const modal = document.getElementById('themeModal');
+            if (modal) modal.style.display = 'flex';
+        };
+        
+        const closeThemeModal = () => {
+            const modal = document.getElementById('themeModal');
+            if (modal) modal.style.display = 'none';
+        };
+        
+        const setTheme = (themeName) => {
+            currentTheme.value = themeName;
+            localStorage.setItem('appTheme', themeName);
+            closeThemeModal();
         };
         
         const loadTheme = () => {
-            const saved = localStorage.getItem('darkMode');
-            if (saved !== null) {
-                isDarkMode.value = saved === 'true';
+            const savedTheme = localStorage.getItem('appTheme');
+            if (savedTheme && ['theme-default', 'theme-dark', 'theme-ocean', 'theme-purple', 'theme-sunset'].includes(savedTheme)) {
+                currentTheme.value = savedTheme;
             } else {
-                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                isDarkMode.value = prefersDark;
-            }
-            if (isDarkMode.value) {
-                document.body.classList.add('dark-mode');
-            } else {
-                document.body.classList.remove('dark-mode');
+                currentTheme.value = 'theme-default';
             }
         };
         
@@ -212,7 +213,7 @@ createApp({
             }
         };
         
-        // ---------- 通用请求函数（自动故障转移）----------
+        // ---------- 通用请求函数 ----------
         const requestWithFallback = async (urlPath, options = {}) => {
             const maxRetries = API_LIST.length;
             let lastError = null;
@@ -299,7 +300,7 @@ createApp({
             loadingSearch.value = false;
         };
         
-        // ---------- 图片加载失败时替换为默认图片 ----------
+        // ---------- 图片错误处理 ----------
         const handleImageError = (event) => {
             const img = event.target;
             if (img.src.includes('cdn-icons-png.flaticon.com')) return;
@@ -337,7 +338,7 @@ createApp({
             throw new Error('无法获取播放地址');
         };
         
-        // ---------- 获取歌曲详情（用于 ID 解析）----------
+        // ---------- 获取歌曲详情 ----------
         const getSongDetail = async (songId) => {
             const maxRetries = API_LIST.length;
             for (let i = 0; i < maxRetries; i++) {
@@ -400,7 +401,7 @@ createApp({
             }
         };
         
-        // 下载当前歌曲
+        // ---------- 下载当前歌曲 ----------
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src || audio.src === '') {
@@ -520,9 +521,7 @@ createApp({
             }
         };
         
-        // 修改 fetchPlaylistTracks：增加加载状态，封面逻辑与搜索一致
         const fetchPlaylistTracks = async (playlistId, plName) => {
-            // 清空旧列表，显示加载状态
             searchResults.value = [];
             searchPerformed.value = true;
             loadingSearch.value = true;
@@ -577,6 +576,7 @@ createApp({
                 fullscreenIsPlaying.value = false;
             }
         };
+        
         const stopAudio = () => {
             const audio = audioPlayer.value;
             if (audio) { 
@@ -588,6 +588,7 @@ createApp({
                 if (fullscreenInterval) clearInterval(fullscreenInterval);
             }
         };
+        
         const updateProgress = () => {
             const audio = audioPlayer.value;
             if (audio && audio.duration) {
@@ -599,6 +600,7 @@ createApp({
                 updateLyrics(audio.currentTime);
             }
         };
+        
         const onLoadedMetadata = () => {
             const audio = audioPlayer.value;
             if (audio) {
@@ -607,21 +609,25 @@ createApp({
                 audio.volume = volumeValue.value;
             }
         };
+        
         const seekAudio = () => {
             const audio = audioPlayer.value;
             if (audio && duration.value) {
                 audio.currentTime = (progressValue.value / 100) * duration.value;
             }
         };
+        
         const changeVolume = () => {
             const audio = audioPlayer.value;
             if (audio) audio.volume = volumeValue.value;
         };
+        
         const onAudioEnded = () => { 
             isPlaying.value = false;
             fullscreenIsPlaying.value = false;
             currentIsVip.value = false;
         };
+        
         const onAudioError = (e) => { 
             console.error('Audio error:', e);
             playErrorMsg.value = '播放失败，可能是音频链接无效'; 
@@ -716,6 +722,20 @@ createApp({
             playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.cover);
         };
         
+        // ---------- 空格键控制播放/暂停 ----------
+        const handleKeydown = (event) => {
+            // 如果焦点在输入框或可编辑元素中，不处理空格键
+            const target = event.target;
+            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+            if (isInput) return;
+            
+            if (event.code === 'Space') {
+                event.preventDefault();
+                togglePlayPause();
+            }
+        };
+        
+        // ---------- 初始化 ----------
         const initModalEvents = () => {
             const vipModal = document.getElementById('vipModal');
             if (vipModal) {
@@ -736,7 +756,11 @@ createApp({
                 initModalEvents();
                 const fsModal = document.getElementById('fullscreenPlayer');
                 if (fsModal) fsModal.style.display = 'none';
+                const themeModal = document.getElementById('themeModal');
+                if (themeModal) themeModal.style.display = 'none';
             });
+            // 添加全局键盘监听
+            window.addEventListener('keydown', handleKeydown);
         });
         
         return {
@@ -753,7 +777,7 @@ createApp({
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
             fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
             fullscreenTogglePlayPause, fullscreenSeek, fullscreenPrev, fullscreenNext,
-            isDarkMode, toggleTheme
+            currentTheme, openThemeModal, closeThemeModal, setTheme
         };
     }
 }).mount('#app');
