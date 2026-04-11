@@ -86,6 +86,12 @@ createApp({
             return url.replace(/^http:\/\//i, 'https://');
         };
         
+        // 统一提取封面函数（与歌单逻辑一致）
+        const extractCover = (item) => {
+            // 优先级: al.picUrl / album.picUrl > cover > picUrl
+            return item.al?.picUrl || item.album?.picUrl || item.cover || item.picUrl || '';
+        };
+        
         const extractSongId = (input) => {
             if (!input) return null;
             if (/^\d+$/.test(input.trim())) return input.trim();
@@ -115,8 +121,10 @@ createApp({
         };
         
         const setTheme = (themeName) => {
+            console.log('[主题] 切换到:', themeName);
             currentTheme.value = themeName;
             localStorage.setItem('appTheme', themeName);
+            document.body.className = themeName;
             closeThemeModal();
         };
         
@@ -127,6 +135,8 @@ createApp({
             } else {
                 currentTheme.value = 'theme-default';
             }
+            document.body.className = currentTheme.value;
+            console.log('[主题] 加载主题:', currentTheme.value);
         };
         
         // ---------- 歌词滚动 ----------
@@ -250,7 +260,7 @@ createApp({
                         detail = res.data.data[0];
                     }
                     if (detail) {
-                        const coverUrl = detail.al?.picUrl || detail.album?.picUrl || detail.cover || detail.picUrl;
+                        const coverUrl = extractCover(detail);
                         if (coverUrl && coverUrl.startsWith('http')) {
                             return toHttps(coverUrl);
                         }
@@ -262,7 +272,7 @@ createApp({
             return null;
         };
         
-        // ---------- 图片加载失败处理（核心修复）----------
+        // ---------- 图片加载失败处理 ----------
         const handleImageError = async (event, songId) => {
             const img = event.target;
             if (img.getAttribute('data-retrying') === 'true') return;
@@ -286,7 +296,7 @@ createApp({
             }
         };
         
-        // ---------- 搜索函数 ----------
+        // ---------- 搜索函数（使用统一封面提取）----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -330,7 +340,8 @@ createApp({
                 const duration = item.duration || item.dt || 0;
                 const fee = item.fee || 0;
                 const isVip = (fee === 1 || fee === 4);
-                let picUrl = item.picUrl || item.cover || item.album?.picUrl || '';
+                // 统一使用 extractCover
+                let picUrl = extractCover(item);
                 if (picUrl && picUrl.startsWith('http')) {
                     picUrl = toHttps(picUrl);
                 } else {
@@ -514,7 +525,7 @@ createApp({
                 const songDetail = await getSongDetail(id);
                 const fee = songDetail.fee || 0;
                 const isVip = (fee === 1 || fee === 4);
-                let picUrl = songDetail.al?.picUrl || songDetail.album?.picUrl || songDetail.cover || songDetail.picUrl;
+                let picUrl = extractCover(songDetail);
                 if (picUrl) picUrl = toHttps(picUrl);
                 else picUrl = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
                 const song = {
@@ -576,7 +587,7 @@ createApp({
                     searchResults.value = tracks.map(track => {
                         const fee = track.fee || 0;
                         const isVip = (fee === 1 || fee === 4);
-                        let picUrl = track.al?.picUrl || track.album?.picUrl || track.cover || '';
+                        let picUrl = extractCover(track);
                         if (picUrl && picUrl.startsWith('http')) {
                             picUrl = toHttps(picUrl);
                         } else {
@@ -785,7 +796,6 @@ createApp({
             const hideModal = () => { modal.style.display = 'none'; };
             if (closeBtn) closeBtn.onclick = hideModal;
             if (confirmBtn) confirmBtn.onclick = hideModal;
-            // 点击模态框背景关闭
             modal.onclick = (e) => { if (e.target === modal) hideModal(); };
         };
         
@@ -812,7 +822,6 @@ createApp({
                 if (fsModal) fsModal.style.display = 'none';
                 const themeModal = document.getElementById('themeModal');
                 if (themeModal) themeModal.style.display = 'none';
-                // 显示启动公告
                 showAnnouncement();
             });
             window.addEventListener('keydown', handleKeydown);
