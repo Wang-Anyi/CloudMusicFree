@@ -20,7 +20,6 @@
     --ctrl-btn-color: #4f2a18;
 }
 
-/* 暗色模式覆盖变量（优先级高） */
 body.dark-mode {
     --bg-gradient-start: #1a1a2e;
     --bg-gradient-end: #16213e;
