@@ -57,6 +57,8 @@ createApp({
         // 背景设置
         const bgImageUrl = ref('');
         const blurEnabled = ref(false);
+        const bgBlur = ref(0);
+        const cardBlur = ref(0);
         
         // ---------- API 列表 ----------
         const API_LIST = [
@@ -144,7 +146,6 @@ createApp({
             currentTheme.value = themeName;
             localStorage.setItem('appTheme', themeName);
             document.body.className = currentTheme.value;
-            // 重新应用模糊效果（因为主题类改变后需要保持 blur-enabled）
             if (blurEnabled.value) {
                 document.body.classList.add('blur-enabled');
             }
@@ -919,6 +920,10 @@ createApp({
             if (savedBg) {
                 bgImageUrl.value = savedBg;
                 document.body.classList.add('custom-bg');
+                document.body.style.backgroundImage = `url(${savedBg})`;
+                document.body.style.backgroundSize = 'cover';
+                document.body.style.backgroundPosition = 'center center';
+                document.body.style.backgroundAttachment = 'fixed';
             }
             const savedBlur = localStorage.getItem('blurEnabled');
             if (savedBlur !== null) {
@@ -928,6 +933,17 @@ createApp({
                 } else {
                     document.body.classList.remove('blur-enabled');
                 }
+            }
+            // 加载模糊度
+            const savedBgBlur = localStorage.getItem('bgBlur');
+            if (savedBgBlur !== null) {
+                bgBlur.value = parseInt(savedBgBlur);
+                document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`);
+            }
+            const savedCardBlur = localStorage.getItem('cardBlur');
+            if (savedCardBlur !== null) {
+                cardBlur.value = parseInt(savedCardBlur);
+                document.body.style.setProperty('--card-blur-amount', `${cardBlur.value / 10}px`);
             }
         };
         
@@ -939,6 +955,10 @@ createApp({
             }
             localStorage.setItem('customBgImage', bgImageUrl.value);
             document.body.classList.add('custom-bg');
+            document.body.style.backgroundImage = `url(${bgImageUrl.value})`;
+            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundPosition = 'center center';
+            document.body.style.backgroundAttachment = 'fixed';
             playErrorMsg.value = '✅ 背景已更新';
             setTimeout(() => { if (playErrorMsg.value === '✅ 背景已更新') playErrorMsg.value = ''; }, 2000);
         };
@@ -947,6 +967,10 @@ createApp({
             bgImageUrl.value = '';
             localStorage.removeItem('customBgImage');
             document.body.classList.remove('custom-bg');
+            document.body.style.backgroundImage = '';
+            document.body.style.backgroundSize = '';
+            document.body.style.backgroundPosition = '';
+            document.body.style.backgroundAttachment = '';
             playErrorMsg.value = '✅ 已恢复默认背景';
             setTimeout(() => { if (playErrorMsg.value === '✅ 已恢复默认背景') playErrorMsg.value = ''; }, 2000);
         };
@@ -958,6 +982,16 @@ createApp({
             } else {
                 document.body.classList.remove('blur-enabled');
             }
+        };
+        
+        const saveBgBlur = () => {
+            localStorage.setItem('bgBlur', bgBlur.value);
+            document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`);
+        };
+        
+        const saveCardBlur = () => {
+            localStorage.setItem('cardBlur', cardBlur.value);
+            document.body.style.setProperty('--card-blur-amount', `${cardBlur.value / 10}px`);
         };
         
         const openSettingsModal = () => {
@@ -1006,6 +1040,12 @@ createApp({
                 if (confirmBtn) confirmBtn.onclick = goToNetEase;
                 vipModal.onclick = (e) => { if (e.target === vipModal) hideVipModal(); };
             }
+            const settingsModal = document.getElementById('settingsModal');
+            if (settingsModal) {
+                const closeBtn = document.getElementById('closeSettingsBtn');
+                if (closeBtn) closeBtn.onclick = closeSettingsModal;
+                settingsModal.onclick = (e) => { if (e.target === settingsModal) closeSettingsModal(); };
+            }
         };
         
         onMounted(() => {
@@ -1039,7 +1079,8 @@ createApp({
             fullscreenTogglePlayPause, fullscreenSeek,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
-            bgImageUrl, blurEnabled, bodyBackgroundStyle, saveBgImage, resetBgImage, saveBlurEnabled,
+            bgImageUrl, blurEnabled, bgBlur, cardBlur, bodyBackgroundStyle,
+            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardBlur,
             openSettingsModal, closeSettingsModal
         };
     }
