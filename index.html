@@ -10,16 +10,14 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app">
+<div id="app" :class="currentTheme">
     <div class="app-container">
         <div class="header">
             <div class="header-left">
                 <h1>🎵 云音匣 · 免费听</h1>
                 <p>搜索歌曲 / ID解析 · 高品质在线播放 · 歌词同步 · 热门歌单</p>
             </div>
-            <button class="theme-toggle" @click="toggleTheme">
-                {{ isDarkMode ? '☀️ 浅色' : '🌙 暗色' }}
-            </button>
+            <button class="theme-toggle" @click="openThemeModal">🎨 主题</button>
         </div>
 
         <div class="main-grid">
@@ -131,10 +129,11 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 10 个 API 自动故障转移 · 图片失效自动修复
+            🎧 10 个 API 自动故障转移 · 空格键播放/暂停
         </div>
     </div>
 
+    <!-- 全屏播放器 -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -176,21 +175,39 @@
             </div>
         </div>
     </div>
-</div>
 
-<div id="vipModal" class="modal" style="display: none;">
-    <div class="modal-content">
-        <div class="modal-header">
-            <span>⚠️ VIP 歌曲</span>
-            <button class="modal-close" id="closeModalBtn">&times;</button>
+    <!-- 主题选择弹窗 -->
+    <div id="themeModal" class="modal" style="display: none;">
+        <div class="modal-content theme-modal-content">
+            <div class="modal-header">
+                <span>🎨 选择主题颜色</span>
+                <button class="modal-close" @click="closeThemeModal">&times;</button>
+            </div>
+            <div class="theme-buttons">
+                <button class="theme-btn theme-default" @click="setTheme('theme-default')">🌿 默认暖色</button>
+                <button class="theme-btn theme-dark" @click="setTheme('theme-dark')">🌙 暗夜黑</button>
+                <button class="theme-btn theme-ocean" @click="setTheme('theme-ocean')">💙 海洋绿</button>
+                <button class="theme-btn theme-purple" @click="setTheme('theme-purple')">💜 梦幻紫</button>
+                <button class="theme-btn theme-sunset" @click="setTheme('theme-sunset')">🧡 日落橙</button>
+            </div>
         </div>
-        <div class="modal-body">
-            <p>该歌曲为 VIP 会员专属，暂无法在本站播放。</p>
-            <p>请前往 <strong>网易云音乐</strong> 官方平台收听完整版。</p>
-        </div>
-        <div class="modal-footer">
-            <button id="modalCancelBtn" class="modal-btn cancel">返回</button>
-            <button id="modalConfirmBtn" class="modal-btn confirm">前往</button>
+    </div>
+
+    <!-- VIP 提示弹窗 -->
+    <div id="vipModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>⚠️ VIP 歌曲</span>
+                <button class="modal-close" id="closeModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>该歌曲为 VIP 会员专属，暂无法在本站播放。</p>
+                <p>请前往 <strong>网易云音乐</strong> 官方平台收听完整版。</p>
+            </div>
+            <div class="modal-footer">
+                <button id="modalCancelBtn" class="modal-btn cancel">返回</button>
+                <button id="modalConfirmBtn" class="modal-btn confirm">前往</button>
+            </div>
         </div>
     </div>
 </div>
