@@ -111,6 +111,7 @@
                             <button class="ctrl-btn icon-btn" @click="playPrev">⏮️</button>
                             <button class="ctrl-btn icon-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️' : '▶️' }}</button>
                             <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
+                            <button class="ctrl-btn" @click="stopAudio">⏹️ 停止</button>
                             <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                         </div>
                         <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
@@ -148,7 +149,7 @@
         </div>
     </div>
 
-    <!-- 全屏播放器（窗口模式） -->
+    <!-- 全屏播放器（窗口模式，尺寸基于视口） -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -183,7 +184,7 @@
                 </div>
                 <div class="fullscreen-buttons">
                     <button class="ctrl-btn icon-btn" @click="playPrev">⏮️</button>
-                    <!-- 全屏播放器也删除播放/暂停按钮，只保留上一曲、下一曲、下载 -->
+                    <button class="ctrl-btn icon-btn" @click="fullscreenTogglePlayPause">{{ fullscreenIsPlaying ? '⏸️' : '▶️' }}</button>
                     <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
                     <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                 </div>
