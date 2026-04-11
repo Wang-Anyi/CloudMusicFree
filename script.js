@@ -9,7 +9,6 @@ createApp({
         const loadingSearch = ref(false);
         const searchPerformed = ref(false);
         
-        // 播放相关
         const currentSongName = ref('');
         const currentArtist = ref('');
         const currentCover = ref('');
@@ -18,30 +17,23 @@ createApp({
         const audioPlayer = ref(null);
         let currentAudioSrc = '';
         
-        // 播放器控制
         const isPlaying = ref(false);
         const currentTime = ref(0);
         const duration = ref(0);
         const progressValue = ref(0);
         const volumeValue = ref(0.7);
         
-        // 歌词相关
         const lyricsLines = ref([]);
         const currentLyricIndex = ref(-1);
         const lyricsContainer = ref(null);
         
-        // 播放历史
         const playHistory = ref([]);
-        
-        // 推荐歌单
         const recommendPlaylists = ref([]);
         
-        // 当前播放歌曲的 VIP 状态和详细信息
         const currentIsVip = ref(false);
         let currentSongId = '';
         let currentSongArtist = '';
         
-        // 全屏播放器相关数据
         const fullscreenPlayerVisible = ref(false);
         const fullscreenCover = ref('');
         const fullscreenSongName = ref('');
@@ -54,14 +46,25 @@ createApp({
         const fullscreenIsPlaying = ref(false);
         let fullscreenInterval = null;
         
-        // 暗色/浅色模式
         const isDarkMode = ref(false);
         
-        // ✅ 使用您最新部署的自建 API
-        const API_BASE = 'https://api-enhanced-delta-six.vercel.app';
+        // ========== API 列表（共 10 个，按优先级排序）==========
+        // 前两个是您自己的自建 API
+        // 后八个是国内公共 API（自动故障转移）
+        const API_LIST = [
+            'https://meting-api-pi-one.vercel.app',      // 1. 您的 Meting API
+            'https://api-enhanced-delta-six.vercel.app', // 2. 您的自建 API
+            'https://api.liyefeng.top',                  // 3. 公共备用
+            'https://ncm.zhenxin.me',                    // 4. 真心
+            'https://zm.i9mr.com',                       // 5. 墨染云
+            'https://music.mcseekeri.com',               // 6. MCSeekeri
+            'https://zm.wwoyun.cn',                      // 7. 宁波节点
+            'https://api.injahow.cn',                    // 8. injahow
+            'https://netease-api.cyan9527.com',          // 9. 社区备用
+            'https://music.ghser.com'                    // 10. 社区备用
+        ];
         
-        // 弹窗相关
-        let pendingVipSong = null;
+        let currentApiIndex = 0;
         
         // ---------- 辅助函数 ----------
         const formatDuration = (ms) => {
@@ -127,7 +130,7 @@ createApp({
             }
         };
         
-        // ---------- 歌词滚动（仅容器内滚动）----------
+        // ---------- 歌词滚动（仅容器内）----------
         const scrollLyricsToActive = () => {
             if (!lyricsContainer.value) return;
             const container = lyricsContainer.value;
@@ -155,7 +158,7 @@ createApp({
         // ---------- 歌词解析 ----------
         const fetchLyrics = async (songId) => {
             try {
-                const res = await axios.get(`${API_BASE}/lyric?id=${songId}`, { timeout: 8000 });
+                const res = await requestWithFallback(`/lyric?id=${songId}`, { timeout: 8000 });
                 if (res.data && res.data.lrc && res.data.lrc.lyric) {
                     const rawLyric = res.data.lrc.lyric;
                     const lines = rawLyric.split('\n');
@@ -211,49 +214,171 @@ createApp({
             }
         };
         
+        // ---------- 通用请求函数（自动故障转移）----------
+        const requestWithFallback = async (urlPath, options = {}) => {
+            const maxRetries = API_LIST.length;
+            let lastError = null;
+            for (let i = 0; i < maxRetries; i++) {
+                const apiIndex = (currentApiIndex + i) % maxRetries;
+                const apiBase = API_LIST[apiIndex];
+                const fullUrl = `${apiBase}${urlPath}`;
+                try {
+                    const response = await axios.get(fullUrl, { 
+                        timeout: options.timeout || 10000,
+                        ...options 
+                    });
+                    currentApiIndex = apiIndex;
+                    console.log(`[API] ✅ 成功: ${apiBase}`);
+                    return response;
+                } catch (err) {
+                    console.warn(`[API] ❌ ${apiBase} 失败:`, err.message);
+                    lastError = err;
+                }
+            }
+            throw lastError || new Error('所有 API 均不可用');
+        };
+        
+        // ---------- 搜索函数（兼容多格式）----------
+        const searchSongs = async () => {
+            const keyword = searchKeyword.value.trim();
+            if (!keyword) return alert('请输入歌名或歌手');
+            loadingSearch.value = true;
+            searchPerformed.value = true;
+            const maxRetries = API_LIST.length;
+            let lastError = null;
+            for (let i = 0; i < maxRetries; i++) {
+                const apiIndex = (currentApiIndex + i) % maxRetries;
+                const apiBase = API_LIST[apiIndex];
+                const url = `${apiBase}/search?keywords=${encodeURIComponent(keyword)}&limit=30`;
+                try {
+                    const res = await axios.get(url, { timeout: 12000 });
+                    let songs = null;
+                    if (res.data && res.data.result && res.data.result.songs) {
+                        songs = res.data.result.songs;
+                    } else if (res.data && res.data.data && Array.isArray(res.data.data)) {
+                        songs = res.data.data;
+                    } else if (Array.isArray(res.data)) {
+                        songs = res.data;
+                    }
+                    if (songs && songs.length) {
+                        searchResults.value = songs.map(item => {
+                            const id = item.id || item.song_id;
+                            const name = item.name || item.title;
+                            const artist = item.artists?.[0]?.name || item.artist || item.singer || '未知';
+                            const duration = item.duration || item.dt || 0;
+                            const picUrl = item.album?.picUrl || item.picUrl || item.cover || '';
+                            const fee = item.fee || 0;
+                            const isVip = (fee === 1 || fee === 4);
+                            return {
+                                id: String(id),
+                                name: name,
+                                artist: artist,
+                                duration: duration,
+                                picUrl: toHttps(picUrl),
+                                isVip: isVip
+                            };
+                        });
+                        currentApiIndex = apiIndex;
+                        console.log(`[搜索] ✅ 成功: ${apiBase}`);
+                        loadingSearch.value = false;
+                        return;
+                    }
+                } catch (err) {
+                    console.warn(`[搜索] ${apiBase} 失败:`, err.message);
+                    lastError = err;
+                }
+            }
+            searchResults.value = [];
+            playErrorMsg.value = '所有搜索接口均不可用，请稍后重试';
+            loadingSearch.value = false;
+        };
+        
+        // ---------- 获取播放地址 ----------
+        const getSongUrl = async (songId) => {
+            const maxRetries = API_LIST.length;
+            for (let i = 0; i < maxRetries; i++) {
+                const apiIndex = (currentApiIndex + i) % maxRetries;
+                const apiBase = API_LIST[apiIndex];
+                const url = `${apiBase}/song/url?id=${songId}`;
+                try {
+                    const res = await axios.get(url, { timeout: 15000 });
+                    let musicUrl = null;
+                    if (res.data && res.data.data && res.data.data[0] && res.data.data[0].url) {
+                        musicUrl = res.data.data[0].url;
+                    } else if (res.data && res.data.url) {
+                        musicUrl = res.data.url;
+                    } else if (typeof res.data === 'string') {
+                        musicUrl = res.data;
+                    } else if (res.data && res.data.data && typeof res.data.data === 'string') {
+                        musicUrl = res.data.data;
+                    }
+                    if (musicUrl) {
+                        currentApiIndex = apiIndex;
+                        console.log(`[播放] ✅ 成功: ${apiBase}`);
+                        return toHttps(musicUrl);
+                    }
+                } catch (err) {
+                    console.warn(`[播放] ${apiBase} 失败:`, err.message);
+                }
+            }
+            throw new Error('无法获取播放地址');
+        };
+        
+        // ---------- 获取歌曲详情 ----------
+        const getSongDetail = async (songId) => {
+            const maxRetries = API_LIST.length;
+            for (let i = 0; i < maxRetries; i++) {
+                const apiIndex = (currentApiIndex + i) % maxRetries;
+                const apiBase = API_LIST[apiIndex];
+                const url = `${apiBase}/song/detail?ids=${songId}`;
+                try {
+                    const res = await axios.get(url, { timeout: 8000 });
+                    let songDetail = null;
+                    if (res.data && res.data.songs && res.data.songs[0]) {
+                        songDetail = res.data.songs[0];
+                    } else if (res.data && res.data.data && res.data.data[0]) {
+                        songDetail = res.data.data[0];
+                    }
+                    if (songDetail) {
+                        currentApiIndex = apiIndex;
+                        return songDetail;
+                    }
+                } catch (err) {
+                    console.warn(`[详情] ${apiBase} 失败:`, err.message);
+                }
+            }
+            throw new Error('无法获取歌曲详情');
+        };
+        
         // ---------- 核心播放函数 ----------
         const playSongById = async (songId, songName, artistName, coverUrl) => {
             if (!songId) return;
             loadingPlay.value = true;
             playErrorMsg.value = '';
             try {
-                const urlRes = await axios.get(`${API_BASE}/song/url?id=${songId}`, { timeout: 15000 });
-                let musicUrl = null;
-                if (urlRes.data && urlRes.data.data && urlRes.data.data[0] && urlRes.data.data[0].url) {
-                    musicUrl = urlRes.data.data[0].url;
-                } else if (urlRes.data && urlRes.data.url) {
-                    musicUrl = urlRes.data.url;
-                } else if (typeof urlRes.data === 'string') {
-                    musicUrl = urlRes.data;
-                }
+                const musicUrl = await getSongUrl(songId);
+                currentSongName.value = songName || '未知歌曲';
+                currentArtist.value = artistName || '网易云音乐';
+                currentCover.value = toHttps(coverUrl || '');
+                currentIsVip.value = false;
+                currentSongId = songId;
+                currentSongArtist = currentArtist.value;
+                addToHistory(songId, songName, currentArtist.value, currentCover.value);
                 
-                if (musicUrl) {
-                    musicUrl = toHttps(musicUrl);
-                    currentSongName.value = songName || '未知歌曲';
-                    currentArtist.value = artistName || '网易云音乐';
-                    currentCover.value = toHttps(coverUrl || '');
-                    currentIsVip.value = false;
-                    currentSongId = songId;
-                    currentSongArtist = currentArtist.value;
-                    addToHistory(songId, songName, currentArtist.value, currentCover.value);
-                    
-                    fullscreenSongName.value = currentSongName.value;
-                    fullscreenArtist.value = currentArtist.value;
-                    fullscreenCover.value = currentCover.value;
-                    
-                    const audio = audioPlayer.value;
-                    if (audio) {
-                        audio.src = musicUrl;
-                        currentAudioSrc = musicUrl;
-                        audio.volume = volumeValue.value;
-                        await audio.play();
-                        isPlaying.value = true;
-                        fullscreenIsPlaying.value = true;
-                    }
-                    fetchLyrics(songId);
-                } else {
-                    throw new Error('未获取到播放地址');
+                fullscreenSongName.value = currentSongName.value;
+                fullscreenArtist.value = currentArtist.value;
+                fullscreenCover.value = currentCover.value;
+                
+                const audio = audioPlayer.value;
+                if (audio) {
+                    audio.src = musicUrl;
+                    currentAudioSrc = musicUrl;
+                    audio.volume = volumeValue.value;
+                    await audio.play();
+                    isPlaying.value = true;
+                    fullscreenIsPlaying.value = true;
                 }
+                fetchLyrics(songId);
             } catch (err) {
                 console.error('播放错误:', err);
                 playErrorMsg.value = err.message || '网络错误，请重试';
@@ -325,63 +450,24 @@ createApp({
             }
         };
         
-        // ---------- 搜索 ----------
-        const searchSongs = async () => {
-            const keyword = searchKeyword.value.trim();
-            if (!keyword) return alert('请输入歌名或歌手');
-            loadingSearch.value = true;
-            searchPerformed.value = true;
-            try {
-                const res = await axios.get(`${API_BASE}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 12000 });
-                if (res.data && res.data.result && res.data.result.songs) {
-                    searchResults.value = res.data.result.songs.map(item => {
-                        const fee = item.fee || 0;
-                        const isVip = (fee === 1 || fee === 4);
-                        return {
-                            id: String(item.id),
-                            name: item.name,
-                            artist: item.artists.map(a => a.name).join('/'),
-                            duration: item.duration,
-                            picUrl: toHttps(item.album.picUrl || ''),
-                            isVip: isVip,
-                            fee: fee
-                        };
-                    });
-                } else {
-                    searchResults.value = [];
-                }
-            } catch (e) {
-                console.error(e);
-                searchResults.value = [];
-                playErrorMsg.value = '搜索接口异常，请稍后重试';
-            } finally {
-                loadingSearch.value = false;
-            }
-        };
-        
         const parseById = async () => {
             const id = extractSongId(songIdInput.value);
             if (!id) return alert('请输入正确的歌曲ID或链接');
             try {
-                const res = await axios.get(`${API_BASE}/song/detail?ids=${id}`, { timeout: 8000 });
-                if (res.data && res.data.songs && res.data.songs[0]) {
-                    const songDetail = res.data.songs[0];
-                    const fee = songDetail.fee || 0;
-                    const isVip = (fee === 1 || fee === 4);
-                    const song = {
-                        id: String(songDetail.id),
-                        name: songDetail.name,
-                        artist: songDetail.ar.map(a => a.name).join('/'),
-                        picUrl: toHttps(songDetail.al.picUrl || ''),
-                        isVip: isVip
-                    };
-                    if (isVip) {
-                        showVipModal(song);
-                    } else {
-                        playSongById(song.id, song.name, song.artist, song.picUrl);
-                    }
+                const songDetail = await getSongDetail(id);
+                const fee = songDetail.fee || 0;
+                const isVip = (fee === 1 || fee === 4);
+                const song = {
+                    id: String(songDetail.id),
+                    name: songDetail.name,
+                    artist: songDetail.ar.map(a => a.name).join('/'),
+                    picUrl: toHttps(songDetail.al.picUrl || ''),
+                    isVip: isVip
+                };
+                if (isVip) {
+                    showVipModal(song);
                 } else {
-                    throw new Error('未找到歌曲信息');
+                    playSongById(song.id, song.name, song.artist, song.picUrl);
                 }
             } catch (err) {
                 playErrorMsg.value = '获取歌曲信息失败，请检查ID';
@@ -396,7 +482,7 @@ createApp({
             const plist = [];
             for (let pid of randomIds) {
                 try {
-                    const res = await axios.get(`${API_BASE}/playlist/detail?id=${pid}`, { timeout: 8000 });
+                    const res = await requestWithFallback(`/playlist/detail?id=${pid}`, { timeout: 8000 });
                     if (res.data && res.data.playlist) {
                         plist.push({
                             id: res.data.playlist.id,
@@ -420,7 +506,7 @@ createApp({
         const fetchPlaylistTracks = async (playlistId, plName) => {
             loadingSearch.value = true;
             try {
-                const res = await axios.get(`${API_BASE}/playlist/track/all?id=${playlistId}&limit=30`, { timeout: 10000 });
+                const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=30`, { timeout: 10000 });
                 if (res.data && res.data.songs) {
                     const tracks = res.data.songs;
                     searchResults.value = tracks.map(track => {
@@ -603,6 +689,7 @@ createApp({
         };
         
         // 初始化弹窗事件
+        let pendingVipSong = null;
         const initModalEvents = () => {
             const vipModal = document.getElementById('vipModal');
             if (vipModal) {
@@ -635,13 +722,11 @@ createApp({
             togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
             onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks,
             handlePlayClick, downloadCurrentSong,
-            // 全屏相关
             openFullscreenPlayer, closeFullscreenPlayer,
             fullscreenCover, fullscreenSongName, fullscreenArtist,
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
             fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
             fullscreenTogglePlayPause, fullscreenSeek, fullscreenPrev, fullscreenNext,
-            // 主题
             isDarkMode, toggleTheme
         };
     }
