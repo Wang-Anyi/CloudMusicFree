@@ -57,8 +57,8 @@ createApp({
         // 暗色/浅色模式
         const isDarkMode = ref(false);
         
-        // API 地址（可替换为您自己的或稳定的公共 API）
-        const API_BASE = 'https://api.liyefeng.top';
+        // ✅ 使用您最新部署的自建 API
+        const API_BASE = 'https://api-enhanced-delta-six.vercel.app';
         
         // 弹窗相关
         let pendingVipSong = null;
@@ -101,7 +101,7 @@ createApp({
             }
         };
         
-        // ---------- 主题切换（修复：直接操作 body 类，确保全局生效）----------
+        // ---------- 主题切换 ----------
         const toggleTheme = () => {
             isDarkMode.value = !isDarkMode.value;
             if (isDarkMode.value) {
@@ -127,7 +127,7 @@ createApp({
             }
         };
         
-        // ---------- 歌词滚动（修复：仅滚动歌词容器，不滚动整个页面）----------
+        // ---------- 歌词滚动（仅容器内滚动）----------
         const scrollLyricsToActive = () => {
             if (!lyricsContainer.value) return;
             const container = lyricsContainer.value;
@@ -140,7 +140,6 @@ createApp({
             }
         };
         
-        // 全屏歌词滚动
         const scrollFullscreenLyricsToActive = () => {
             const container = document.querySelector('.fullscreen-lyrics-scroll');
             if (!container) return;
@@ -203,7 +202,6 @@ createApp({
             if (idx !== currentLyricIndex.value) {
                 currentLyricIndex.value = idx;
                 fullscreenLyricIndex.value = idx;
-                // 使用新的滚动方法，不滚动页面
                 nextTick(() => {
                     scrollLyricsToActive();
                     if (fullscreenPlayerVisible.value) {
