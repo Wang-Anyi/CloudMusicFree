@@ -5,7 +5,7 @@ createApp({
         // ---------- 响应式数据 ----------
         const searchKeyword = ref('');
         const songIdInput = ref('');
-        const playlistUrlInput = ref('');  // 新增：自定义歌单输入
+        const playlistUrlInput = ref('');
         const searchResults = ref([]);
         const loadingSearch = ref(false);
         const searchPerformed = ref(false);
@@ -47,10 +47,8 @@ createApp({
         const fullscreenIsPlaying = ref(false);
         let fullscreenInterval = null;
         
-        // 当前主题
         const currentTheme = ref('theme-default');
         
-        // ========== API 列表 ==========
         const API_LIST = [
             'https://meting-api-pi-one.vercel.app',
             'https://api-enhanced-delta-six.vercel.app',
@@ -87,7 +85,6 @@ createApp({
             return url.replace(/^http:\/\//i, 'https://');
         };
         
-        // 统一提取封面函数
         const extractCover = (item) => {
             return item.al?.picUrl || item.album?.picUrl || item.cover || item.picUrl || '';
         };
@@ -101,11 +98,9 @@ createApp({
             return match2 ? match2[1] : null;
         };
         
-        // 新增：提取歌单 ID
         const extractPlaylistId = (input) => {
             if (!input) return null;
             if (/^\d+$/.test(input.trim())) return input.trim();
-            // 匹配 /playlist?id=123 或 /playlist/123 或 /my/m/music/playlist?id=123
             const match = input.match(/[?&]id=(\d+)/);
             if (match && match[1]) return match[1];
             const match2 = input.match(/\/playlist\/(\d+)/);
@@ -237,7 +232,7 @@ createApp({
             }
         };
         
-        // ---------- 通用请求函数 ----------
+        // ---------- 通用请求 ----------
         const requestWithFallback = async (urlPath, options = {}) => {
             const maxRetries = API_LIST.length;
             let lastError = null;
@@ -261,7 +256,7 @@ createApp({
             throw lastError || new Error('所有 API 均不可用');
         };
         
-        // ---------- 通过歌曲 ID 获取真实封面 ----------
+        // ---------- 获取真实封面 ----------
         const fetchRealCover = async (songId) => {
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
@@ -286,7 +281,7 @@ createApp({
             return null;
         };
         
-        // ---------- 图片加载成功 ----------
+        // ---------- 图片加载 ----------
         const onImageLoad = (event, songId) => {
             const wrapper = event.target.closest('.cover-wrapper');
             if (wrapper) {
@@ -295,7 +290,6 @@ createApp({
             }
         };
         
-        // ---------- 图片加载失败 ----------
         const onImageError = (event, songId) => {
             const img = event.target;
             const wrapper = img.closest('.cover-wrapper');
@@ -308,7 +302,7 @@ createApp({
             }
         };
         
-        // ---------- 搜索函数 ----------
+        // ---------- 搜索 ----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -380,7 +374,7 @@ createApp({
             loadingSearch.value = false;
         };
         
-        // ---------- 获取播放地址 ----------
+        // ---------- 播放地址获取 ----------
         const getSongUrl = async (songId) => {
             const maxRetries = API_LIST.length;
             for (let i = 0; i < maxRetries; i++) {
@@ -411,7 +405,7 @@ createApp({
             throw new Error('无法获取播放地址');
         };
         
-        // ---------- 获取歌曲详情 ----------
+        // ---------- 歌曲详情 ----------
         const getSongDetail = async (songId) => {
             const maxRetries = API_LIST.length;
             for (let i = 0; i < maxRetries; i++) {
@@ -437,7 +431,7 @@ createApp({
             throw new Error('无法获取歌曲详情');
         };
         
-        // ---------- 核心播放函数 ----------
+        // ---------- 播放 ----------
         const playSongById = async (songId, songName, artistName, coverUrl) => {
             if (!songId) return;
             loadingPlay.value = true;
@@ -458,9 +452,15 @@ createApp({
                 
                 const audio = audioPlayer.value;
                 if (audio) {
+                    // 避免 play() 被中断：先暂停并清空旧 src
+                    audio.pause();
+                    audio.src = '';
+                    // 短暂延迟让浏览器释放资源
+                    await new Promise(r => setTimeout(r, 10));
                     audio.src = musicUrl;
-                    currentAudioSrc = musicUrl;
-                    audio.volume = volumeValue.value;
+                    await new Promise((resolve) => {
+                        audio.addEventListener('canplay', resolve, { once: true });
+                    });
                     await audio.play();
                     isPlaying.value = true;
                     fullscreenIsPlaying.value = true;
@@ -474,7 +474,7 @@ createApp({
             }
         };
         
-        // ---------- 下载当前歌曲 ----------
+        // ---------- 下载（修复 TCON 错误）----------
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src || audio.src === '') {
@@ -513,7 +513,7 @@ createApp({
                       .setFrame('TPE1', [currentArtist.value || '未知艺术家'])
                       .setFrame('TALB', '云音匣下载')
                       .setFrame('TYER', new Date().getFullYear().toString())
-                      .setFrame('TCON', '流行');
+                      .setFrame('TCON', ['流行']);  // 修复：必须是数组
                 if (coverBuffer) {
                     const coverType = coverUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
                     writer.setFrame('APIC', {
@@ -546,7 +546,7 @@ createApp({
             }
         };
         
-        // ---------- VIP 弹窗逻辑 ----------
+        // ---------- VIP 弹窗 ----------
         let pendingVipSong = null;
         const showVipModal = (song) => {
             pendingVipSong = song;
@@ -603,7 +603,7 @@ createApp({
             }
         };
         
-        // ---------- 歌单 ----------
+        // ---------- 热门歌单 ----------
         const loadPlaylists = async () => {
             const playlistIds = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
             const randomIds = playlistIds.sort(() => 0.5 - Math.random()).slice(0, 4);
@@ -673,7 +673,7 @@ createApp({
             }
         };
         
-        // ---------- 新增：加载自定义歌单 ----------
+        // 自定义歌单
         const loadCustomPlaylist = async () => {
             const input = playlistUrlInput.value.trim();
             if (!input) return alert('请输入歌单链接或ID');
@@ -682,10 +682,7 @@ createApp({
                 alert('无法识别歌单ID，请检查链接格式');
                 return;
             }
-            // 直接调用 fetchPlaylistTracks，传入歌单ID和自定义名称
             await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`);
-            // 清空输入框（可选）
-            // playlistUrlInput.value = '';
         };
         
         // ---------- 播放器控制 ----------
@@ -859,7 +856,7 @@ createApp({
             }
         };
         
-        // ---------- 显示启动公告 ----------
+        // ---------- 公告 ----------
         const showAnnouncement = () => {
             const modal = document.getElementById('announcementModal');
             if (!modal) return;
