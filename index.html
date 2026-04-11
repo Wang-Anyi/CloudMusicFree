@@ -240,6 +240,96 @@
     </div>
 
     <!-- 原有其他弹窗（主题、设置、个人歌单、反馈、公告、VIP）保持不变，省略重复代码 -->
+        <!-- 设置弹窗（完整版） -->
+    <div id="settingsModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 550px;">
+            <div class="modal-header">
+                <span>⚙️ 设置</span>
+                <button class="modal-close" id="closeSettingsBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <div class="settings-title">🖼️ 自定义背景图片</div>
+                    <div class="settings-desc">输入图片URL（支持 http/https）</div>
+                    <input type="text" v-model="bgImageUrl" class="settings-input" placeholder="https://example.com/background.jpg">
+                    <div class="settings-buttons">
+                        <button class="btn btn-outline" @click="saveBgImage">应用背景</button>
+                        <button class="btn btn-outline" @click="resetBgImage">重置默认</button>
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">✨ 背景模糊度</div>
+                    <div class="settings-desc">范围 0-100，数值越大越模糊（0 = 不模糊）</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="bgBlur" min="0" max="100" step="1" class="settings-slider" @input="saveBgBlur">
+                        <span class="slider-value">{{ bgBlur }}%</span>
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">🎴 卡片透明度</div>
+                    <div class="settings-desc">范围 20-100%，数值越大越不透明</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="cardOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveCardOpacity">
+                        <span class="slider-value">{{ cardOpacity }}%</span>
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">🎭 卡片遮罩透明度</div>
+                    <div class="settings-desc">范围 20-100%，数值越大遮罩越明显（仅当模糊开关开启时生效）</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="maskOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveMaskOpacity">
+                        <span class="slider-value">{{ maskOpacity }}%</span>
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">🔮 毛玻璃强度（背景模糊）</div>
+                    <div class="settings-desc">范围 0-30px，数值越大背景模糊越强</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="glassIntensity" min="0" max="30" step="1" class="settings-slider" @input="saveGlassIntensity">
+                        <span class="slider-value">{{ glassIntensity }}px</span>
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">✨ 卡片背景模糊化开关</div>
+                    <label class="switch-label">
+                        <span class="switch-text">启用模糊效果</span>
+                        <label class="switch">
+                            <input type="checkbox" v-model="blurEnabled" @change="saveBlurEnabled">
+                            <span class="slider round"></span>
+                        </label>
+                    </label>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">🔤 自定义字体（TTF/OTF）</div>
+                    <div class="settings-desc">上传字体文件，立即应用</div>
+                    <div class="font-upload">
+                        <input type="file" accept=".ttf,.otf,.woff,.woff2" @change="applyCustomFont">
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">📦 导入/导出设置</div>
+                    <div class="import-export-buttons">
+                        <button class="btn btn-outline" @click="exportSettings">导出设置</button>
+                        <label class="btn btn-outline" style="cursor:pointer;">导入设置
+                            <input type="file" accept=".json" @change="importSettings" style="display:none;" id="importSettingsInput">
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" @click="closeSettingsModal">关闭</button>
+            </div>
+        </div>
+    </div>
+        <div id="vipModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>⚠️ VIP 歌曲</span>
+                <button class="modal-close" id="closeModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>该歌曲为 VIP 会员专属，暂无法在本站播放。</p>
+                <p>请前往 <strong>网易云音乐</strong> 官方平台收听完整版。</p>
+            </div>
+            <div class="modal-footer">
+                <button id="modalCancelBtn" class="modal-btn cancel">返回</button>
+                <button id="modalConfirmBtn" class="modal-btn confirm">前往</button>
+            </div>
+        </div>
+    </div>
     <!-- 主题弹窗 -->
     <div id="themeModal" class="modal" style="display: none;">...</div>
     <!-- 设置弹窗（需扩展毛玻璃强度、字体、导入导出等，为节省篇幅略，将在后续给出完整） -->
