@@ -800,7 +800,7 @@ createApp({
             await fetchPlaylistTracks(playlist.id, playlist.name, true);
         };
         
-        // ---------- 上一曲/下一曲 ----------
+        // ---------- 上一曲/下一曲/播放/暂停 ----------
         const playPrev = () => {
             if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
                 if (currentPlaylistIndex <= 0) {
@@ -853,8 +853,19 @@ createApp({
             }
         };
         
-        // ---------- 播放器控制 ----------
-        // 已删除 togglePlayPause 函数
+        const togglePlayPause = () => {
+            const audio = audioPlayer.value;
+            if (!audio || !audio.src) return;
+            if (audio.paused) {
+                audio.play();
+                isPlaying.value = true;
+                fullscreenIsPlaying.value = true;
+            } else {
+                audio.pause();
+                isPlaying.value = false;
+                fullscreenIsPlaying.value = false;
+            }
+        };
         
         const stopAudio = () => {
             const audio = audioPlayer.value;
@@ -874,7 +885,7 @@ createApp({
                 currentTime.value = audio.currentTime;
                 const percent = (audio.currentTime / audio.duration) * 100;
                 progressValue.value = percent;
-                // 更新进度条渐变背景
+                // 更新进度条渐变背景（主界面）
                 const progressBar = document.querySelector('.progress-bar');
                 if (progressBar) {
                     progressBar.style.setProperty('--progress-percent', `${percent}%`);
@@ -964,6 +975,10 @@ createApp({
             const modal = document.getElementById('fullscreenPlayer');
             if (modal) modal.style.display = 'none';
             if (fullscreenInterval) clearInterval(fullscreenInterval);
+        };
+        
+        const fullscreenTogglePlayPause = () => {
+            togglePlayPause();
         };
         
         const fullscreenSeek = () => {
@@ -1101,10 +1116,9 @@ createApp({
             const target = event.target;
             const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
             if (isInput) return;
-            // 空格键改为下一曲（因为播放/暂停已删除）
             if (event.code === 'Space') {
                 event.preventDefault();
-                playNext();
+                togglePlayPause();
             }
         };
         
@@ -1178,14 +1192,14 @@ createApp({
             isPlaying, currentTime, duration, progressValue, volumeValue,
             lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
             formatDuration, formatTime, searchSongs, parseById, playSongById,
-            stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
+            togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
             onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks: onDefaultPlaylistClick, loadCustomPlaylist,
             handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
             openFullscreenPlayer, closeFullscreenPlayer,
             fullscreenCover, fullscreenSongName, fullscreenArtist,
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
             fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
-            fullscreenSeek,
+            fullscreenTogglePlayPause, fullscreenSeek,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
             bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, bodyBackgroundStyle,
