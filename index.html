@@ -205,23 +205,38 @@
         </div>
     </div>
 
-    <!-- 设置弹窗（背景图片 + 模糊开关） -->
+    <!-- 设置弹窗 -->
     <div id="settingsModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
-                <span>⚙️ 背景设置</span>
+                <span>⚙️ 设置</span>
                 <button class="modal-close" id="closeSettingsBtn">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="settings-section">
                     <div class="settings-title">🖼️ 自定义背景图片</div>
                     <div class="settings-desc">输入图片URL（支持 http/https）</div>
-                    <input type="text" v-model="bgImageUrl" class="cookie-textarea" placeholder="https://example.com/background.jpg">
+                    <input type="text" v-model="bgImageUrl" class="settings-input" placeholder="https://example.com/background.jpg">
                     <div class="settings-buttons">
                         <button class="btn btn-outline" @click="saveBgImage">应用背景</button>
                         <button class="btn btn-outline" @click="resetBgImage">重置默认</button>
                     </div>
-                    <div class="settings-title" style="margin-top: 20px;">✨ 卡片背景模糊化</div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">✨ 背景模糊度</div>
+                    <div class="settings-desc">范围 0-100，数值越大越模糊（0 = 不模糊）</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="bgBlur" min="0" max="100" step="1" class="settings-slider" @input="saveBgBlur">
+                        <span class="slider-value">{{ bgBlur }}%</span>
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">🎴 卡片模糊度</div>
+                    <div class="settings-desc">范围 0-100，数值越大越模糊（0 = 不模糊）</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="cardBlur" min="0" max="100" step="1" class="settings-slider" @input="saveCardBlur">
+                        <span class="slider-value">{{ cardBlur }}%</span>
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">✨ 卡片背景模糊化开关</div>
                     <div class="settings-desc">开启后卡片背景将带有高斯模糊效果（略带主题色）</div>
                     <label class="switch-label">
                         <span class="switch-text">启用模糊效果</span>
