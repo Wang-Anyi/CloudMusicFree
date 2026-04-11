@@ -3,26 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>云音乐解析 · 免费高清播放器</title>
-    <!-- Vue 3 & Axios 网络框架 -->
+    <title>云音匣 · 网易云免费播放器</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <!-- 自定义样式 -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="app">
     <div class="app-container">
-        <!-- 头部区域 -->
         <div class="header">
-            <h1>🎵 云音乐解析 · 免费听</h1>
+            <h1>🎵 云音匣 · 免费听</h1>
             <p>搜索歌曲 / ID解析 · 高品质在线播放 · 歌词同步 · 热门歌单</p>
         </div>
 
         <div class="main-grid">
             <!-- 左侧：搜索 + 歌单推荐 + 搜索结果 -->
             <div class="left-panel">
-                <!-- 搜索栏 -->
                 <div class="search-card">
                     <div class="search-box">
                         <input type="text" class="search-input" v-model="searchKeyword" placeholder="输入歌名 / 歌手 例如：晴天 周杰伦" @keyup.enter="searchSongs">
@@ -34,7 +30,6 @@
                     </div>
                 </div>
 
-                <!-- 热门推荐歌单 (丰富页面) -->
                 <div class="playlist-section">
                     <div class="section-title">
                         <span>🔥 热门推荐歌单</span>
@@ -49,21 +44,20 @@
                     </div>
                 </div>
 
-                <!-- 搜索结果列表 -->
                 <div class="results-header">
                     <span>🎶 搜索结果</span>
                     <span style="font-size:12px;">点击右侧▶️播放</span>
                 </div>
                 <div class="song-list" v-if="searchResults.length">
-                    <div class="song-item" v-for="song in searchResults" :key="song.id" @click="playSongById(song.id, song.name, song.artists, song.picUrl)">
+                    <div class="song-item" v-for="song in searchResults" :key="song.id" @click="playSongById(song.id, song.name, song.artist, song.picUrl)">
                         <div class="song-info">
                             <img class="song-cover" :src="song.picUrl || 'https://picsum.photos/48/48?random=1'" alt="cover" @error="e => e.target.src='https://picsum.photos/48/48?grayscale'">
                             <div class="song-details">
-                                <div class="song-name">{{ song.name }} <span class="badge-free" v-if="!song.paid">免费</span></div>
-                                <div class="song-artist">{{ formatArtists(song.artists) }} · {{ formatDuration(song.duration) }}</div>
+                                <div class="song-name">{{ song.name }} <span class="badge-free">免费</span></div>
+                                <div class="song-artist">{{ song.artist }} · {{ formatDuration(song.duration) }}</div>
                             </div>
                         </div>
-                        <button class="play-btn-small" @click.stop="playSongById(song.id, song.name, song.artists, song.picUrl)">▶ 播放</button>
+                        <button class="play-btn-small" @click.stop="playSongById(song.id, song.name, song.artist, song.picUrl)">▶ 播放</button>
                     </div>
                 </div>
                 <div v-else-if="loadingSearch" class="empty-tip">⏳ 搜索中，请稍候...</div>
@@ -79,7 +73,6 @@
                         <div class="track-title">{{ currentSongName || '未播放' }}</div>
                         <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
                         
-                        <!-- 增强播放控件：进度条 + 音量 -->
                         <div class="player-controls">
                             <div class="progress-bar-container">
                                 <span class="time-current">{{ formatTime(currentTime) }}</span>
@@ -102,7 +95,6 @@
                     </div>
                 </div>
 
-                <!-- 歌词展示区域 (丰富) -->
                 <div class="lyrics-card">
                     <div class="section-title">📃 滚动歌词</div>
                     <div class="lyrics-container" ref="lyricsContainer">
@@ -115,7 +107,6 @@
                     </div>
                 </div>
 
-                <!-- 最近播放记录 -->
                 <div class="history-card">
                     <div class="section-title">🕘 最近播放</div>
                     <div class="history-list" v-if="playHistory.length">
@@ -130,7 +121,7 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 数据来自公开接口 · 仅供个人学习交流 · 支持正版音乐 · 歌词/歌单实时解析
+            🎧 数据来自 Meting API · 仅供个人学习交流 · 支持正版音乐
         </div>
     </div>
 </div>
