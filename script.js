@@ -52,7 +52,10 @@ createApp({
         const fullscreenDuration = ref(0);
         const fullscreenProgressValue = ref(0);
         const fullscreenIsPlaying = ref(false);
-        let fullscreenInterval = null;  // 用于同步进度
+        let fullscreenInterval = null;
+        
+        // 暗色/浅色模式
+        const isDarkMode = ref(false);
         
         // API 地址
         const API_BASE = 'https://api-enhanced-wine-tau.vercel.app';
@@ -98,6 +101,23 @@ createApp({
             }
         };
         
+        // ---------- 主题切换 ----------
+        const toggleTheme = () => {
+            isDarkMode.value = !isDarkMode.value;
+            localStorage.setItem('darkMode', isDarkMode.value);
+        };
+        
+        const loadTheme = () => {
+            const saved = localStorage.getItem('darkMode');
+            if (saved !== null) {
+                isDarkMode.value = saved === 'true';
+            } else {
+                // 可选：根据系统主题自动设置
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                isDarkMode.value = prefersDark;
+            }
+        };
+        
         // ---------- 歌词解析 ----------
         const fetchLyrics = async (songId) => {
             try {
@@ -122,7 +142,6 @@ createApp({
                     }
                     parsed.sort((a,b) => a.time - b.time);
                     lyricsLines.value = parsed;
-                    // 同步全屏歌词
                     fullscreenLyrics.value = parsed;
                 } else {
                     lyricsLines.value = [];
@@ -148,13 +167,11 @@ createApp({
             }
             if (idx !== currentLyricIndex.value) {
                 currentLyricIndex.value = idx;
-                // 同步全屏歌词索引
                 fullscreenLyricIndex.value = idx;
                 if (idx >= 0 && lyricsContainer.value) {
                     const activeEl = lyricsContainer.value.querySelector('.lyric-line.active');
                     if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
-                // 全屏歌词自动滚动
                 if (fullscreenPlayerVisible.value && fullscreenLyricIndex.value >= 0) {
                     nextTick(() => {
                         const container = document.querySelector('.fullscreen-lyrics-scroll');
@@ -186,7 +203,6 @@ createApp({
                         currentSongArtist = currentArtist.value;
                         addToHistory(songId, songName, currentArtist.value, currentCover.value);
                         
-                        // 同步全屏数据
                         fullscreenSongName.value = currentSongName.value;
                         fullscreenArtist.value = currentArtist.value;
                         fullscreenCover.value = currentCover.value;
@@ -216,7 +232,7 @@ createApp({
             }
         };
         
-        // 下载当前歌曲（直接保存为 艺术家 - 歌曲名.mp3）
+        // 下载当前歌曲
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src || audio.src === '') {
@@ -231,10 +247,8 @@ createApp({
             }
             try {
                 const musicUrl = audio.src;
-                // 获取文件扩展名（通常为 .mp3）
                 const ext = musicUrl.split('?')[0].match(/\.([a-zA-Z0-9]+)$/)?.[1] || 'mp3';
                 const fileName = `${currentSongArtist || '未知艺术家'} - ${currentSongName.value || '未知歌曲'}.${ext}`;
-                // 使用 fetch 获取 blob 并触发下载
                 const response = await fetch(musicUrl);
                 const blob = await response.blob();
                 const link = document.createElement('a');
@@ -481,7 +495,6 @@ createApp({
             fullscreenPlayerVisible.value = true;
             const modal = document.getElementById('fullscreenPlayer');
             if (modal) modal.style.display = 'flex';
-            // 同步当前播放状态
             fullscreenCover.value = currentCover.value;
             fullscreenSongName.value = currentSongName.value;
             fullscreenArtist.value = currentArtist.value;
@@ -494,7 +507,6 @@ createApp({
                 fullscreenProgressValue.value = (audio.currentTime / audio.duration) * 100;
                 fullscreenIsPlaying.value = !audio.paused;
             }
-            // 启动同步定时器
             if (fullscreenInterval) clearInterval(fullscreenInterval);
             fullscreenInterval = setInterval(() => {
                 if (audioPlayer.value && fullscreenPlayerVisible.value) {
@@ -503,9 +515,9 @@ createApp({
                     fullscreenDuration.value = audio.duration;
                     fullscreenProgressValue.value = (audio.currentTime / audio.duration) * 100;
                     fullscreenIsPlaying.value = !audio.paused;
-                    // 同步歌词索引
-                    const idx = currentLyricIndex.value;
-                    if (idx !== fullscreenLyricIndex.value) fullscreenLyricIndex.value = idx;
+                    if (currentLyricIndex.value !== fullscreenLyricIndex.value) {
+                        fullscreenLyricIndex.value = currentLyricIndex.value;
+                    }
                 }
             }, 200);
         };
@@ -528,7 +540,6 @@ createApp({
             }
         };
         
-        // 简单的上一曲/下一曲：基于播放历史（最近播放列表）
         const fullscreenPrev = () => {
             if (playHistory.value.length < 2) {
                 playErrorMsg.value = '没有上一曲';
@@ -537,7 +548,6 @@ createApp({
             }
             const currentIndex = playHistory.value.findIndex(item => item.id === currentSongId);
             if (currentIndex === -1 || currentIndex === 0) {
-                // 播放历史第一首，没有上一曲
                 playErrorMsg.value = '已经是第一首';
                 setTimeout(() => { if (playErrorMsg.value === '已经是第一首') playErrorMsg.value = ''; }, 1500);
                 return;
@@ -577,10 +587,10 @@ createApp({
         };
         
         onMounted(() => {
+            loadTheme();
             loadPlaylists();
             nextTick(() => {
                 initModalEvents();
-                // 确保全屏模态框初始隐藏
                 const fsModal = document.getElementById('fullscreenPlayer');
                 if (fsModal) fsModal.style.display = 'none';
             });
@@ -600,7 +610,9 @@ createApp({
             fullscreenCover, fullscreenSongName, fullscreenArtist,
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
             fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
-            fullscreenTogglePlayPause, fullscreenSeek, fullscreenPrev, fullscreenNext
+            fullscreenTogglePlayPause, fullscreenSeek, fullscreenPrev, fullscreenNext,
+            // 主题
+            isDarkMode, toggleTheme
         };
     }
 }).mount('#app');
