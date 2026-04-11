@@ -1,4 +1,4 @@
-const { createApp, ref, onMounted } = Vue;
+const { createApp, ref, onMounted, nextTick } = Vue;
 
 createApp({
     setup() {
@@ -36,8 +36,11 @@ createApp({
         // 推荐歌单
         const recommendPlaylists = ref([]);
         
-        // ✅ 使用您自己部署的 API 地址
+        // API 地址（请替换为你的实际地址）
         const API_BASE = 'https://api-enhanced-wine-tau.vercel.app';
+        
+        // 弹窗相关
+        let pendingVipSong = null;  // 暂存 VIP 歌曲信息
         
         // ---------- 辅助函数 ----------
         const formatDuration = (ms) => {
@@ -125,7 +128,7 @@ createApp({
             }
         };
         
-        // ---------- 核心播放函数 ----------
+        // ---------- 播放函数（免费歌曲） ----------
         const playSongById = async (songId, songName, artistName, coverUrl) => {
             if (!songId) return;
             loadingPlay.value = true;
@@ -159,7 +162,52 @@ createApp({
             }
         };
         
-        // ---------- 搜索歌曲 ----------
+        // ---------- VIP 弹窗逻辑 ----------
+        const showVipModal = (song) => {
+            pendingVipSong = song;
+            const modal = document.getElementById('vipModal');
+            if (modal) modal.style.display = 'flex';
+        };
+        
+        const hideVipModal = () => {
+            const modal = document.getElementById('vipModal');
+            if (modal) modal.style.display = 'none';
+            pendingVipSong = null;
+        };
+        
+        const goToNetEase = () => {
+            if (pendingVipSong && pendingVipSong.id) {
+                window.open(`https://music.163.com/song?id=${pendingVipSong.id}`, '_blank');
+            }
+            hideVipModal();
+        };
+        
+        // 统一的播放点击处理（判断 VIP）
+        const handlePlayClick = (song) => {
+            if (song.isVip) {
+                showVipModal(song);
+            } else {
+                playSongById(song.id, song.name, song.artist, song.picUrl);
+            }
+        };
+        
+        // 初始化弹窗事件绑定
+        const initModalEvents = () => {
+            const modal = document.getElementById('vipModal');
+            if (!modal) return;
+            const closeBtn = document.getElementById('closeModalBtn');
+            const cancelBtn = document.getElementById('modalCancelBtn');
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+            if (closeBtn) closeBtn.onclick = hideVipModal;
+            if (cancelBtn) cancelBtn.onclick = hideVipModal;
+            if (confirmBtn) confirmBtn.onclick = goToNetEase;
+            // 点击模态框背景关闭
+            modal.onclick = (e) => {
+                if (e.target === modal) hideVipModal();
+            };
+        };
+        
+        // ---------- 搜索歌曲（增加 VIP 识别） ----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -168,13 +216,20 @@ createApp({
             try {
                 const res = await axios.get(`${API_BASE}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 12000 });
                 if (res.data && res.data.result && res.data.result.songs) {
-                    searchResults.value = res.data.result.songs.map(item => ({
-                        id: String(item.id),
-                        name: item.name,
-                        artist: item.artists.map(a => a.name).join('/'),
-                        duration: item.duration,
-                        picUrl: item.album.picUrl || ''
-                    }));
+                    searchResults.value = res.data.result.songs.map(item => {
+                        // fee: 0=免费, 1=VIP, 4=付费专辑 (均视为VIP)
+                        const fee = item.fee || 0;
+                        const isVip = fee !== 0;
+                        return {
+                            id: String(item.id),
+                            name: item.name,
+                            artist: item.artists.map(a => a.name).join('/'),
+                            duration: item.duration,
+                            picUrl: item.album.picUrl || '',
+                            isVip: isVip,
+                            fee: fee
+                        };
+                    });
                 } else {
                     searchResults.value = [];
                 }
@@ -187,10 +242,35 @@ createApp({
             }
         };
         
-        const parseById = () => {
+        const parseById = async () => {
             const id = extractSongId(songIdInput.value);
             if (!id) return alert('请输入正确的歌曲ID或链接');
-            playSongById(id, `歌曲ID:${id}`, '网易云音乐', '');
+            // 先通过搜索接口获取歌曲详情（判断 VIP）
+            try {
+                const res = await axios.get(`${API_BASE}/song/detail?ids=${id}`, { timeout: 8000 });
+                if (res.data && res.data.songs && res.data.songs[0]) {
+                    const songDetail = res.data.songs[0];
+                    const fee = songDetail.fee || 0;
+                    const isVip = fee !== 0;
+                    const song = {
+                        id: String(songDetail.id),
+                        name: songDetail.name,
+                        artist: songDetail.ar.map(a => a.name).join('/'),
+                        picUrl: songDetail.al.picUrl || '',
+                        isVip: isVip
+                    };
+                    if (isVip) {
+                        showVipModal(song);
+                    } else {
+                        playSongById(song.id, song.name, song.artist, song.picUrl);
+                    }
+                } else {
+                    throw new Error('未找到歌曲信息');
+                }
+            } catch (err) {
+                playErrorMsg.value = '获取歌曲信息失败，请检查ID';
+                console.error(err);
+            }
         };
         
         // ---------- 热门歌单 ----------
@@ -227,13 +307,18 @@ createApp({
                 const res = await axios.get(`${API_BASE}/playlist/track/all?id=${playlistId}&limit=30`, { timeout: 10000 });
                 if (res.data && res.data.songs) {
                     const tracks = res.data.songs;
-                    searchResults.value = tracks.map(track => ({
-                        id: String(track.id),
-                        name: track.name,
-                        artist: track.ar.map(a => a.name).join('/'),
-                        duration: track.dt,
-                        picUrl: track.al?.picUrl || ''
-                    }));
+                    searchResults.value = tracks.map(track => {
+                        const fee = track.fee || 0;
+                        const isVip = fee !== 0;
+                        return {
+                            id: String(track.id),
+                            name: track.name,
+                            artist: track.ar.map(a => a.name).join('/'),
+                            duration: track.dt,
+                            picUrl: track.al?.picUrl || '',
+                            isVip: isVip
+                        };
+                    });
                     searchPerformed.value = true;
                     playErrorMsg.value = `✅ 已加载歌单: ${plName}`;
                 } else {
@@ -294,6 +379,9 @@ createApp({
         
         onMounted(() => {
             loadPlaylists();
+            nextTick(() => {
+                initModalEvents();
+            });
         });
         
         return {
@@ -303,7 +391,8 @@ createApp({
             lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
             formatDuration, formatTime, searchSongs, parseById, playSongById,
             togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
-            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks
+            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks,
+            handlePlayClick
         };
     }
 }).mount('#app');
