@@ -110,7 +110,6 @@
                             <button class="ctrl-btn icon-btn" @click="playPrev">⏮️</button>
                             <button class="ctrl-btn icon-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️' : '▶️' }}</button>
                             <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
-                            <button class="ctrl-btn" @click="stopAudio">⏹️ 停止</button>
                             <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                         </div>
                         <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
