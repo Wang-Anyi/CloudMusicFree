@@ -35,6 +35,11 @@ createApp({
         let currentSongId = '';
         let currentSongArtist = '';
         
+        // 新增：用于全屏播放器的歌单切换
+        let currentPlaylistSongs = [];     // 当前歌单的歌曲列表（仅用于自定义歌单切换）
+        let currentPlaylistType = 'history'; // 'history' 或 'custom'
+        let currentPlaylistIndex = -1;       // 当前播放歌曲在歌单中的索引
+        
         const fullscreenPlayerVisible = ref(false);
         const fullscreenCover = ref('');
         const fullscreenSongName = ref('');
@@ -432,7 +437,7 @@ createApp({
         };
         
         // ---------- 播放 ----------
-        const playSongById = async (songId, songName, artistName, coverUrl) => {
+        const playSongById = async (songId, songName, artistName, coverUrl, playlistSongs = null, playlistIndex = -1, playlistType = 'history') => {
             if (!songId) return;
             loadingPlay.value = true;
             playErrorMsg.value = '';
@@ -446,16 +451,26 @@ createApp({
                 currentSongArtist = currentArtist.value;
                 addToHistory(songId, songName, currentArtist.value, currentCover.value);
                 
+                // 更新歌单切换相关状态
+                if (playlistSongs && playlistIndex >= 0) {
+                    currentPlaylistSongs = playlistSongs;
+                    currentPlaylistIndex = playlistIndex;
+                    currentPlaylistType = playlistType;
+                } else {
+                    // 如果不是从歌单播放的，清空歌单状态（之后使用历史记录）
+                    currentPlaylistSongs = [];
+                    currentPlaylistIndex = -1;
+                    currentPlaylistType = 'history';
+                }
+                
                 fullscreenSongName.value = currentSongName.value;
                 fullscreenArtist.value = currentArtist.value;
                 fullscreenCover.value = currentCover.value;
                 
                 const audio = audioPlayer.value;
                 if (audio) {
-                    // 避免 play() 被中断：先暂停并清空旧 src
                     audio.pause();
                     audio.src = '';
-                    // 短暂延迟让浏览器释放资源
                     await new Promise(r => setTimeout(r, 10));
                     audio.src = musicUrl;
                     await new Promise((resolve) => {
@@ -474,7 +489,7 @@ createApp({
             }
         };
         
-        // ---------- 下载（修复 TCON 错误）----------
+        // ---------- 下载（修复 TCON）----------
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src || audio.src === '') {
@@ -513,7 +528,7 @@ createApp({
                       .setFrame('TPE1', [currentArtist.value || '未知艺术家'])
                       .setFrame('TALB', '云音匣下载')
                       .setFrame('TYER', new Date().getFullYear().toString())
-                      .setFrame('TCON', ['流行']);  // 修复：必须是数组
+                      .setFrame('TCON', ['流行']);
                 if (coverBuffer) {
                     const coverType = coverUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
                     writer.setFrame('APIC', {
@@ -603,7 +618,7 @@ createApp({
             }
         };
         
-        // ---------- 热门歌单 ----------
+        // ---------- 歌单 ----------
         const loadPlaylists = async () => {
             const playlistIds = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
             const randomIds = playlistIds.sort(() => 0.5 - Math.random()).slice(0, 4);
@@ -631,17 +646,19 @@ createApp({
             }
         };
         
-        const fetchPlaylistTracks = async (playlistId, plName) => {
+        // 通用：加载歌单歌曲（limit 提高到 1000）
+        const fetchPlaylistTracks = async (playlistId, plName, isCustom = false) => {
             searchResults.value = [];
             searchPerformed.value = true;
             loadingSearch.value = true;
             
             try {
-                const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=30`, { timeout: 10000 });
+                // 使用 limit=1000 尽量获取全部歌曲
+                const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=1000`, { timeout: 15000 });
                 if (res.data && res.data.songs) {
                     const tracks = res.data.songs;
                     const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                    searchResults.value = tracks.map(track => {
+                    const songList = tracks.map(track => {
                         const fee = track.fee || 0;
                         const isVip = (fee === 1 || fee === 4);
                         let picUrl = extractCover(track);
@@ -660,7 +677,19 @@ createApp({
                             loadingCover: false
                         };
                     });
-                    playErrorMsg.value = `✅ 已加载歌单: ${plName}`;
+                    searchResults.value = songList;
+                    playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
+                    
+                    // 如果是自定义歌单，保存歌曲列表供全屏切换使用
+                    if (isCustom) {
+                        currentPlaylistSongs = songList;
+                        currentPlaylistType = 'custom';
+                    } else {
+                        // 默认歌单不清空，但切换时仍使用历史记录，所以无需特殊处理
+                        // 但为了统一，如果点击默认歌单，我们仍然可以允许在全屏内使用歌单切换？根据需求，默认歌单不使用此功能，所以保持 history 模式
+                        currentPlaylistType = 'history';
+                        currentPlaylistSongs = [];
+                    }
                 } else {
                     searchResults.value = [];
                     playErrorMsg.value = '歌单加载失败';
@@ -673,7 +702,12 @@ createApp({
             }
         };
         
-        // 自定义歌单
+        // 热门歌单点击（非自定义）
+        const onDefaultPlaylistClick = (playlistId, plName) => {
+            fetchPlaylistTracks(playlistId, plName, false);
+        };
+        
+        // 自定义歌单加载
         const loadCustomPlaylist = async () => {
             const input = playlistUrlInput.value.trim();
             if (!input) return alert('请输入歌单链接或ID');
@@ -682,7 +716,65 @@ createApp({
                 alert('无法识别歌单ID，请检查链接格式');
                 return;
             }
-            await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`);
+            await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`, true);
+        };
+        
+        // ---------- 全屏播放器 上一曲/下一曲（根据歌单类型）----------
+        const fullscreenPrev = () => {
+            if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
+                // 自定义歌单：在歌单列表内切换
+                if (currentPlaylistIndex <= 0) {
+                    playErrorMsg.value = '已经是歌单第一首';
+                    setTimeout(() => { if (playErrorMsg.value === '已经是歌单第一首') playErrorMsg.value = ''; }, 1500);
+                    return;
+                }
+                const prevSong = currentPlaylistSongs[currentPlaylistIndex - 1];
+                // 播放时更新索引
+                playSongById(prevSong.id, prevSong.name, prevSong.artist, prevSong.picUrl, currentPlaylistSongs, currentPlaylistIndex - 1, 'custom');
+            } else {
+                // 默认歌单或历史模式：使用最近播放历史
+                if (playHistory.value.length < 2) {
+                    playErrorMsg.value = '没有上一曲';
+                    setTimeout(() => { if (playErrorMsg.value === '没有上一曲') playErrorMsg.value = ''; }, 1500);
+                    return;
+                }
+                const currentIndex = playHistory.value.findIndex(item => item.id === currentSongId);
+                if (currentIndex === -1 || currentIndex === 0) {
+                    playErrorMsg.value = '已经是第一首';
+                    setTimeout(() => { if (playErrorMsg.value === '已经是第一首') playErrorMsg.value = ''; }, 1500);
+                    return;
+                }
+                const prevSong = playHistory.value[currentIndex - 1];
+                playSongById(prevSong.id, prevSong.name, prevSong.artist, prevSong.cover);
+            }
+        };
+        
+        const fullscreenNext = () => {
+            if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
+                // 自定义歌单：在歌单列表内切换
+                if (currentPlaylistIndex >= currentPlaylistSongs.length - 1) {
+                    playErrorMsg.value = '已经是歌单最后一首';
+                    setTimeout(() => { if (playErrorMsg.value === '已经是歌单最后一首') playErrorMsg.value = ''; }, 1500);
+                    return;
+                }
+                const nextSong = currentPlaylistSongs[currentPlaylistIndex + 1];
+                playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.picUrl, currentPlaylistSongs, currentPlaylistIndex + 1, 'custom');
+            } else {
+                // 默认歌单或历史模式：使用最近播放历史
+                if (playHistory.value.length < 2) {
+                    playErrorMsg.value = '没有下一曲';
+                    setTimeout(() => { if (playErrorMsg.value === '没有下一曲') playErrorMsg.value = ''; }, 1500);
+                    return;
+                }
+                const currentIndex = playHistory.value.findIndex(item => item.id === currentSongId);
+                if (currentIndex === -1 || currentIndex === playHistory.value.length - 1) {
+                    playErrorMsg.value = '已经是最后一首';
+                    setTimeout(() => { if (playErrorMsg.value === '已经是最后一首') playErrorMsg.value = ''; }, 1500);
+                    return;
+                }
+                const nextSong = playHistory.value[currentIndex + 1];
+                playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.cover);
+            }
         };
         
         // ---------- 播放器控制 ----------
@@ -813,38 +905,6 @@ createApp({
             }
         };
         
-        const fullscreenPrev = () => {
-            if (playHistory.value.length < 2) {
-                playErrorMsg.value = '没有上一曲';
-                setTimeout(() => { if (playErrorMsg.value === '没有上一曲') playErrorMsg.value = ''; }, 1500);
-                return;
-            }
-            const currentIndex = playHistory.value.findIndex(item => item.id === currentSongId);
-            if (currentIndex === -1 || currentIndex === 0) {
-                playErrorMsg.value = '已经是第一首';
-                setTimeout(() => { if (playErrorMsg.value === '已经是第一首') playErrorMsg.value = ''; }, 1500);
-                return;
-            }
-            const prevSong = playHistory.value[currentIndex - 1];
-            playSongById(prevSong.id, prevSong.name, prevSong.artist, prevSong.cover);
-        };
-        
-        const fullscreenNext = () => {
-            if (playHistory.value.length < 2) {
-                playErrorMsg.value = '没有下一曲';
-                setTimeout(() => { if (playErrorMsg.value === '没有下一曲') playErrorMsg.value = ''; }, 1500);
-                return;
-            }
-            const currentIndex = playHistory.value.findIndex(item => item.id === currentSongId);
-            if (currentIndex === -1 || currentIndex === playHistory.value.length - 1) {
-                playErrorMsg.value = '已经是最后一首';
-                setTimeout(() => { if (playErrorMsg.value === '已经是最后一首') playErrorMsg.value = ''; }, 1500);
-                return;
-            }
-            const nextSong = playHistory.value[currentIndex + 1];
-            playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.cover);
-        };
-        
         // ---------- 空格键控制 ----------
         const handleKeydown = (event) => {
             const target = event.target;
@@ -904,7 +964,7 @@ createApp({
             lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
             formatDuration, formatTime, searchSongs, parseById, playSongById,
             togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
-            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks, loadCustomPlaylist,
+            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks: onDefaultPlaylistClick, loadCustomPlaylist,
             handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
             openFullscreenPlayer, closeFullscreenPlayer,
             fullscreenCover, fullscreenSongName, fullscreenArtist,
