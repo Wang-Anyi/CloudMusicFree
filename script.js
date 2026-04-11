@@ -236,12 +236,11 @@ createApp({
             throw lastError || new Error('所有 API 均不可用');
         };
         
-        // ---------- 搜索函数（清空列表 + 显示加载状态）----------
+        // ---------- 搜索函数 ----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
             
-            // 清空之前的搜索结果，显示加载状态
             searchResults.value = [];
             searchPerformed.value = true;
             loadingSearch.value = true;
@@ -281,7 +280,6 @@ createApp({
                 const duration = item.duration || item.dt || 0;
                 const fee = item.fee || 0;
                 const isVip = (fee === 1 || fee === 4);
-                // 提取原始封面（可能无效，但先使用，加载失败时由 @error 替换为默认图）
                 let picUrl = item.picUrl || item.cover || item.album?.picUrl || '';
                 if (picUrl && picUrl.startsWith('http')) {
                     picUrl = toHttps(picUrl);
@@ -304,7 +302,7 @@ createApp({
         // ---------- 图片加载失败时替换为默认图片 ----------
         const handleImageError = (event) => {
             const img = event.target;
-            if (img.src.includes('cdn-icons-png.flaticon.com')) return; // 已经是默认图，避免无限循环
+            if (img.src.includes('cdn-icons-png.flaticon.com')) return;
             img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
         };
         
@@ -522,18 +520,27 @@ createApp({
             }
         };
         
+        // 修改 fetchPlaylistTracks：增加加载状态，封面逻辑与搜索一致
         const fetchPlaylistTracks = async (playlistId, plName) => {
+            // 清空旧列表，显示加载状态
+            searchResults.value = [];
+            searchPerformed.value = true;
             loadingSearch.value = true;
+            
             try {
                 const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=30`, { timeout: 10000 });
                 if (res.data && res.data.songs) {
                     const tracks = res.data.songs;
+                    const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
                     searchResults.value = tracks.map(track => {
                         const fee = track.fee || 0;
                         const isVip = (fee === 1 || fee === 4);
                         let picUrl = track.al?.picUrl || track.album?.picUrl || track.cover || '';
-                        if (picUrl) picUrl = toHttps(picUrl);
-                        else picUrl = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                        if (picUrl && picUrl.startsWith('http')) {
+                            picUrl = toHttps(picUrl);
+                        } else {
+                            picUrl = defaultCover;
+                        }
                         return {
                             id: String(track.id),
                             name: track.name,
@@ -543,7 +550,6 @@ createApp({
                             isVip: isVip
                         };
                     });
-                    searchPerformed.value = true;
                     playErrorMsg.value = `✅ 已加载歌单: ${plName}`;
                 } else {
                     searchResults.value = [];
