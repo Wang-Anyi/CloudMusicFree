@@ -270,7 +270,6 @@ createApp({
             
             const realCover = await fetchRealCover(songId);
             if (realCover) {
-                // 测试图片是否真的可加载
                 const testImg = new Image();
                 testImg.onload = () => {
                     img.src = realCover;
@@ -776,6 +775,20 @@ createApp({
             }
         };
         
+        // ---------- 显示启动公告 ----------
+        const showAnnouncement = () => {
+            const modal = document.getElementById('announcementModal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            const closeBtn = document.getElementById('closeAnnouncementBtn');
+            const confirmBtn = document.getElementById('confirmAnnouncementBtn');
+            const hideModal = () => { modal.style.display = 'none'; };
+            if (closeBtn) closeBtn.onclick = hideModal;
+            if (confirmBtn) confirmBtn.onclick = hideModal;
+            // 点击模态框背景关闭
+            modal.onclick = (e) => { if (e.target === modal) hideModal(); };
+        };
+        
         // ---------- 初始化 ----------
         const initModalEvents = () => {
             const vipModal = document.getElementById('vipModal');
@@ -799,6 +812,8 @@ createApp({
                 if (fsModal) fsModal.style.display = 'none';
                 const themeModal = document.getElementById('themeModal');
                 if (themeModal) themeModal.style.display = 'none';
+                // 显示启动公告
+                showAnnouncement();
             });
             window.addEventListener('keydown', handleKeydown);
         });
