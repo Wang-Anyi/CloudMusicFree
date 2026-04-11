@@ -6,7 +6,6 @@
     <title>云音匣 · 网易云免费播放器</title>
     <!-- 使用您自己放在 assets 文件夹下的 favicon.ico -->
     <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
-    <!-- 备用图标（如果上面的加载失败） -->
     <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -192,6 +191,25 @@
                 <button class="theme-btn theme-ocean" @click="setTheme('theme-ocean')">💙 海洋绿</button>
                 <button class="theme-btn theme-purple" @click="setTheme('theme-purple')">💜 梦幻紫</button>
                 <button class="theme-btn theme-sunset" @click="setTheme('theme-sunset')">🧡 日落橙</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 启动公告弹窗 -->
+    <div id="announcementModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <span>📢 公告</span>
+                <button class="modal-close" id="closeAnnouncementBtn">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <p style="font-size: 1.1rem;">✨ 此网页由 <strong>WangAnyi</strong> + <strong>DeepSeek</strong> 所编写 ✨</p>
+                <p style="margin-top: 16px;">
+                    <a href="https://github.com/Wang-Anyi/CloudMusicFree" target="_blank" rel="noopener noreferrer" style="display: inline-block; background: #2c2c2c; color: white; padding: 8px 20px; border-radius: 40px; text-decoration: none; font-weight: bold;">📂 GitHub 源码</a>
+                </p>
+            </div>
+            <div class="modal-footer" style="justify-content: center;">
+                <button id="confirmAnnouncementBtn" class="modal-btn confirm">开始体验</button>
             </div>
         </div>
     </div>
