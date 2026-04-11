@@ -573,7 +573,7 @@ body {
     gap: 8px;
     margin-bottom: 12px;
 }
-/* 进度条深/浅色样式：已播放部分为深色，未播放部分为浅色 */
+/* 进度条深/浅色样式 */
 .progress-bar {
     flex: 1;
     height: 4px;
@@ -590,7 +590,6 @@ body {
     border-radius: 50%;
     cursor: pointer;
 }
-/* 通过 background 渐变实现深浅区分 */
 .progress-bar {
     background: linear-gradient(to right, var(--progress-thumb) 0%, var(--progress-thumb) var(--progress-percent, 0%), var(--progress-bg) var(--progress-percent, 0%), var(--progress-bg) 100%);
 }
@@ -858,7 +857,7 @@ body {
     filter: brightness(0.95);
 }
 
-/* 全屏播放器样式（窗口模式，有圆角边缘缝隙） */
+/* 全屏播放器样式（居中弹窗模式，圆角，边缘缝隙） */
 .fullscreen-modal {
     position: fixed;
     top: 0;
@@ -873,8 +872,9 @@ body {
     justify-content: center;
 }
 .fullscreen-container {
-    width: 90vw;
-    height: 85vh;
+    width: 90%;
+    max-width: 1300px;
+    height: 85%;
     background: rgba(30, 20, 15, 0.95);
     border-radius: 48px;
     display: flex;
