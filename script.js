@@ -867,18 +867,6 @@ createApp({
             }
         };
         
-        const stopAudio = () => {
-            const audio = audioPlayer.value;
-            if (audio) { 
-                audio.pause(); 
-                audio.currentTime = 0; 
-                isPlaying.value = false;
-                fullscreenIsPlaying.value = false;
-                currentIsVip.value = false;
-                if (fullscreenInterval) clearInterval(fullscreenInterval);
-            }
-        };
-        
         const updateProgress = () => {
             const audio = audioPlayer.value;
             if (audio && audio.duration) {
@@ -1192,7 +1180,7 @@ createApp({
             isPlaying, currentTime, duration, progressValue, volumeValue,
             lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
             formatDuration, formatTime, searchSongs, parseById, playSongById,
-            togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
+            togglePlayPause, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
             onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks: onDefaultPlaylistClick, loadCustomPlaylist,
             handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
             openFullscreenPlayer, closeFullscreenPlayer,
