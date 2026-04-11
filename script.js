@@ -867,13 +867,25 @@ createApp({
             }
         };
         
+        const stopAudio = () => {
+            const audio = audioPlayer.value;
+            if (audio) { 
+                audio.pause(); 
+                audio.currentTime = 0; 
+                isPlaying.value = false;
+                fullscreenIsPlaying.value = false;
+                currentIsVip.value = false;
+                if (fullscreenInterval) clearInterval(fullscreenInterval);
+            }
+        };
+        
         const updateProgress = () => {
             const audio = audioPlayer.value;
             if (audio && audio.duration) {
                 currentTime.value = audio.currentTime;
                 const percent = (audio.currentTime / audio.duration) * 100;
                 progressValue.value = percent;
-                // 更新进度条渐变背景（主界面）
+                // 更新进度条渐变背景
                 const progressBar = document.querySelector('.progress-bar');
                 if (progressBar) {
                     progressBar.style.setProperty('--progress-percent', `${percent}%`);
@@ -921,7 +933,7 @@ createApp({
             fullscreenIsPlaying.value = false;
         };
         
-        // ---------- 全屏播放器 ----------
+        // ---------- 全屏播放器（锁定背景滚动）----------
         const openFullscreenPlayer = () => {
             if (!currentSongName.value) {
                 playErrorMsg.value = '请先播放一首歌曲';
@@ -931,6 +943,8 @@ createApp({
             fullscreenPlayerVisible.value = true;
             const modal = document.getElementById('fullscreenPlayer');
             if (modal) modal.style.display = 'flex';
+            // 锁定背景滚动
+            document.body.style.overflow = 'hidden';
             fullscreenCover.value = currentCover.value;
             fullscreenSongName.value = currentSongName.value;
             fullscreenArtist.value = currentArtist.value;
@@ -962,6 +976,8 @@ createApp({
             fullscreenPlayerVisible.value = false;
             const modal = document.getElementById('fullscreenPlayer');
             if (modal) modal.style.display = 'none';
+            // 恢复背景滚动
+            document.body.style.overflow = '';
             if (fullscreenInterval) clearInterval(fullscreenInterval);
         };
         
@@ -1180,7 +1196,7 @@ createApp({
             isPlaying, currentTime, duration, progressValue, volumeValue,
             lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
             formatDuration, formatTime, searchSongs, parseById, playSongById,
-            togglePlayPause, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
+            togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
             onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks: onDefaultPlaylistClick, loadCustomPlaylist,
             handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
             openFullscreenPlayer, closeFullscreenPlayer,
