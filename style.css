@@ -56,7 +56,6 @@ body {
     .main-grid { grid-template-columns: 1fr; gap: 28px; }
 }
 
-/* 左侧面板 */
 .left-panel {
     background: rgba(255, 255, 255, 0.5);
     border-radius: 32px;
@@ -125,7 +124,6 @@ body {
     border: 1px solid #e2c7b5;
 }
 
-/* 歌单推荐区域 */
 .playlist-section {
     margin-bottom: 28px;
 }
@@ -185,7 +183,6 @@ body {
     color: #9b7b64;
 }
 
-/* 搜索结果列表 */
 .results-header {
     display: flex;
     justify-content: space-between;
@@ -250,6 +247,15 @@ body {
     padding: 2px 8px;
     margin-left: 6px;
 }
+.badge-vip {
+    background: #f3cfc3;
+    color: #b64926;
+    font-size: 0.65rem;
+    border-radius: 40px;
+    padding: 2px 8px;
+    margin-left: 6px;
+    font-weight: 500;
+}
 .play-btn-small {
     background: #fae5d6;
     border: none;
@@ -264,7 +270,6 @@ body {
     color: white;
 }
 
-/* 右侧面板 */
 .right-panel {
     display: flex;
     flex-direction: column;
@@ -357,8 +362,14 @@ body {
     background: #ea8c5c;
     color: white;
 }
+.download-btn {
+    background: #6c8b6e;
+    color: white;
+}
+.download-btn:hover {
+    background: #4a6b4c;
+}
 
-/* 歌词卡片 */
 .lyrics-card, .history-card {
     background: rgba(255, 250, 240, 0.85);
     backdrop-filter: blur(8px);
@@ -517,15 +528,4 @@ body {
 .modal-btn.confirm:hover {
     background: #b83b1f;
     transform: translateY(-1px);
-}
-
-/* VIP 标签样式 */
-.badge-vip {
-    background: #f3cfc3;
-    color: #b64926;
-    font-size: 0.65rem;
-    border-radius: 40px;
-    padding: 2px 8px;
-    margin-left: 6px;
-    font-weight: 500;
 }
