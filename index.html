@@ -22,6 +22,7 @@
             <div class="header-buttons">
                 <button class="theme-toggle" @click="openThemeModal">🎨 主题</button>
                 <button class="theme-toggle" @click="openSettingsModal">⚙️ 设置</button>
+                <button class="theme-toggle" @click="openMyPlaylistsModal">📂 我的歌单</button>
                 <button class="theme-toggle" @click="openFeedbackModal">💬 反馈与改进</button>
             </div>
         </div>
@@ -108,8 +109,9 @@
                         <audio ref="audioPlayer" @timeupdate="updateProgress" @loadedmetadata="onLoadedMetadata" @ended="onAudioEnded" @error="onAudioError" style="display:none;"></audio>
                         <div class="audio-control-buttons">
                             <button class="ctrl-btn icon-btn" @click="playPrev">⏮️</button>
-                            <button class="ctrl-btn icon-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️' : '▶️' }}</button>
+                            <!-- 已删除播放/暂停按钮 -->
                             <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
+                            <button class="ctrl-btn" @click="stopAudio">⏹️ 停止</button>
                             <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                         </div>
                         <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
@@ -143,7 +145,7 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 10 个 API 自动故障转移 · 空格键播放/暂停 · 下载带封面MP3
+            🎧 10 个 API 自动故障转移 · 下载带封面MP3
         </div>
     </div>
 
@@ -182,7 +184,7 @@
                 </div>
                 <div class="fullscreen-buttons">
                     <button class="ctrl-btn icon-btn" @click="playPrev">⏮️</button>
-                    <button class="ctrl-btn icon-btn" @click="fullscreenTogglePlayPause">{{ fullscreenIsPlaying ? '⏸️' : '▶️' }}</button>
+                    <!-- 全屏播放器也删除播放/暂停按钮，只保留上一曲、下一曲、下载 -->
                     <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
                     <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                 </div>
@@ -258,6 +260,40 @@
             </div>
             <div class="modal-footer">
                 <button class="modal-btn confirm" @click="closeSettingsModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 个人歌单弹窗（输入 Cookie） -->
+    <div id="myPlaylistsModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <span>📂 我的网易云歌单</span>
+                <button class="modal-close" id="closeMyPlaylistsBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <div class="settings-title">🔑 输入 Cookie</div>
+                    <div class="settings-desc">粘贴您的网易云 Cookie（包含 MUSIC_U）</div>
+                    <textarea v-model="userCookie" rows="3" class="settings-input" placeholder="MUSIC_U=xxxxx; ..."></textarea>
+                    <div class="settings-buttons">
+                        <button class="btn btn-outline" @click="fetchUserPlaylists">📥 获取所有歌单</button>
+                    </div>
+                    <div v-if="playlistLoading" class="loading-tip">⏳ 加载中...</div>
+                    <div v-if="playlistError" class="error-msg">{{ playlistError }}</div>
+                    <div class="playlist-grid-container" v-if="userPlaylists.length">
+                        <div class="playlist-grid five-cols">
+                            <div class="playlist-item" v-for="pl in userPlaylists" :key="pl.id" @click="selectUserPlaylist(pl)">
+                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=pl'" class="pl-cover" alt="cover">
+                                <div class="pl-name">{{ pl.name }}</div>
+                                <div class="pl-count">📀 {{ pl.trackCount }}首</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" id="confirmMyPlaylistsBtn">关闭</button>
             </div>
         </div>
     </div>
