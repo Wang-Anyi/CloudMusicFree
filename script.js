@@ -85,29 +85,26 @@ createApp({
             return url.replace(/^http:\/\//i, 'https://');
         };
         
-        // 增强的封面提取函数
-        const extractCoverUrl = (item) => {
-            // 尝试多个可能的字段
-            const candidates = [
-                item.picUrl,
-                item.cover,
-                item.coverUrl,
-                item.album?.picUrl,
-                item.album?.cover,
-                item.album?.coverImgUrl,
-                item.artists?.[0]?.img1v1Url,
-                item.artist?.img1v1Url,
-                item.song?.album?.picUrl,
-                item.imgUrl,
-                item.image
-            ];
-            for (let url of candidates) {
-                if (url && url.startsWith('http')) {
-                    return toHttps(url);
+        // 检测图片是否可加载
+        const isImageValid = (url) => {
+            return new Promise((resolve) => {
+                if (!url || !url.startsWith('http')) {
+                    resolve(false);
+                    return;
                 }
-            }
-            // 如果没有找到，返回一个固定的默认音乐图标（base64 或 CDN）
-            return 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                const img = new Image();
+                let resolved = false;
+                img.onload = () => {
+                    if (!resolved) { resolved = true; resolve(true); }
+                };
+                img.onerror = () => {
+                    if (!resolved) { resolved = true; resolve(false); }
+                };
+                img.src = url;
+                setTimeout(() => {
+                    if (!resolved) { resolved = true; resolve(false); }
+                }, 2000);
+            });
         };
         
         const extractSongId = (input) => {
@@ -261,20 +258,20 @@ createApp({
             throw lastError || new Error('所有 API 均不可用');
         };
         
-        // ---------- 搜索函数（增强封面提取）----------
+        // ---------- 搜索函数（含图片故障转移）----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
             loadingSearch.value = true;
             searchPerformed.value = true;
-            const maxRetries = API_LIST.length;
-            let lastError = null;
-            for (let i = 0; i < maxRetries; i++) {
-                const apiIndex = (currentApiIndex + i) % maxRetries;
-                const apiBase = API_LIST[apiIndex];
-                const url = `${apiBase}/search?keywords=${encodeURIComponent(keyword)}&limit=30`;
+            
+            // 第一步：从所有 API 中获取歌曲列表
+            let songsData = null;
+            let usedApiIndex = -1;
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[i];
                 try {
-                    const res = await axios.get(url, { timeout: 12000 });
+                    const res = await axios.get(`${apiBase}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 10000 });
                     let songs = null;
                     if (res.data && res.data.result && res.data.result.songs) {
                         songs = res.data.result.songs;
@@ -284,36 +281,100 @@ createApp({
                         songs = res.data;
                     }
                     if (songs && songs.length) {
-                        searchResults.value = songs.map(item => {
-                            const id = item.id || item.song_id;
-                            const name = item.name || item.title;
-                            const artist = item.artists?.[0]?.name || item.artist || item.singer || '未知';
-                            const duration = item.duration || item.dt || 0;
-                            const fee = item.fee || 0;
-                            const isVip = (fee === 1 || fee === 4);
-                            // 使用增强的封面提取函数
-                            const picUrl = extractCoverUrl(item);
-                            return {
-                                id: String(id),
-                                name: name,
-                                artist: artist,
-                                duration: duration,
-                                picUrl: picUrl,
-                                isVip: isVip
-                            };
-                        });
-                        currentApiIndex = apiIndex;
-                        console.log(`[搜索] ✅ 成功: ${apiBase}`);
-                        loadingSearch.value = false;
-                        return;
+                        songsData = songs;
+                        usedApiIndex = i;
+                        console.log(`[搜索] 成功从 ${apiBase} 获取歌曲列表`);
+                        break;
                     }
-                } catch (err) {
-                    console.warn(`[搜索] ${apiBase} 失败:`, err.message);
-                    lastError = err;
-                }
+                } catch(e) { console.warn(e); }
             }
-            searchResults.value = [];
-            playErrorMsg.value = '所有搜索接口均不可用，请稍后重试';
+            if (!songsData) {
+                searchResults.value = [];
+                playErrorMsg.value = '所有搜索接口均不可用';
+                loadingSearch.value = false;
+                return;
+            }
+            
+            // 第二步：对每个歌曲，尝试获取有效的封面图片
+            const results = [];
+            for (let item of songsData) {
+                const id = item.id || item.song_id;
+                const name = item.name || item.title;
+                const artist = item.artists?.[0]?.name || item.artist || item.singer || '未知';
+                const duration = item.duration || item.dt || 0;
+                const fee = item.fee || 0;
+                const isVip = (fee === 1 || fee === 4);
+                
+                // 候选封面列表（从当前歌曲对象中提取）
+                let coverCandidates = [
+                    item.picUrl,
+                    item.cover,
+                    item.coverUrl,
+                    item.album?.picUrl,
+                    item.album?.cover,
+                    item.album?.coverImgUrl,
+                    item.artists?.[0]?.img1v1Url,
+                    item.imgUrl,
+                    item.image
+                ].filter(u => u && u.startsWith('http')).map(u => toHttps(u));
+                coverCandidates = [...new Set(coverCandidates)];
+                
+                let validCover = null;
+                // 尝试每个候选封面
+                for (let candidate of coverCandidates) {
+                    if (await isImageValid(candidate)) {
+                        validCover = candidate;
+                        break;
+                    }
+                }
+                
+                // 如果还没有有效封面，尝试从其他 API 获取该歌曲的详情
+                if (!validCover && id) {
+                    for (let i = 0; i < Math.min(3, API_LIST.length); i++) {
+                        const apiBase = API_LIST[(usedApiIndex + i + 1) % API_LIST.length];
+                        try {
+                            const detailRes = await axios.get(`${apiBase}/song/detail?ids=${id}`, { timeout: 5000 });
+                            let detail = null;
+                            if (detailRes.data && detailRes.data.songs && detailRes.data.songs[0]) {
+                                detail = detailRes.data.songs[0];
+                            } else if (detailRes.data && detailRes.data.data && detailRes.data.data[0]) {
+                                detail = detailRes.data.data[0];
+                            }
+                            if (detail) {
+                                const detailCovers = [
+                                    detail.al?.picUrl,
+                                    detail.album?.picUrl,
+                                    detail.cover,
+                                    detail.picUrl
+                                ].filter(u => u && u.startsWith('http')).map(u => toHttps(u));
+                                for (let dc of detailCovers) {
+                                    if (await isImageValid(dc)) {
+                                        validCover = dc;
+                                        break;
+                                    }
+                                }
+                                if (validCover) break;
+                            }
+                        } catch(e) { console.warn(e); }
+                    }
+                }
+                
+                // 最终如果没有有效封面，使用默认音乐图标
+                if (!validCover) {
+                    validCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                }
+                
+                results.push({
+                    id: String(id),
+                    name: name,
+                    artist: artist,
+                    duration: duration,
+                    picUrl: validCover,
+                    isVip: isVip
+                });
+            }
+            
+            searchResults.value = results;
             loadingSearch.value = false;
         };
         
@@ -482,7 +543,21 @@ createApp({
                 const songDetail = await getSongDetail(id);
                 const fee = songDetail.fee || 0;
                 const isVip = (fee === 1 || fee === 4);
-                const picUrl = extractCoverUrl(songDetail);
+                let picUrl = null;
+                // 尝试获取有效封面
+                const candidates = [
+                    songDetail.al?.picUrl,
+                    songDetail.album?.picUrl,
+                    songDetail.cover,
+                    songDetail.picUrl
+                ].filter(u => u && u.startsWith('http')).map(u => toHttps(u));
+                for (let cand of candidates) {
+                    if (await isImageValid(cand)) {
+                        picUrl = cand;
+                        break;
+                    }
+                }
+                if (!picUrl) picUrl = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
                 const song = {
                     id: String(songDetail.id),
                     name: songDetail.name,
@@ -535,15 +610,19 @@ createApp({
                 const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=30`, { timeout: 10000 });
                 if (res.data && res.data.songs) {
                     const tracks = res.data.songs;
+                    // 对歌单中的歌曲也尝试获取有效封面（简化版，直接使用第一个候选，不深入验证以免太慢）
                     searchResults.value = tracks.map(track => {
                         const fee = track.fee || 0;
                         const isVip = (fee === 1 || fee === 4);
+                        let picUrl = track.al?.picUrl || track.album?.picUrl || track.cover || '';
+                        if (picUrl) picUrl = toHttps(picUrl);
+                        else picUrl = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
                         return {
                             id: String(track.id),
                             name: track.name,
                             artist: track.ar.map(a => a.name).join('/'),
                             duration: track.dt,
-                            picUrl: extractCoverUrl(track),
+                            picUrl: picUrl,
                             isVip: isVip
                         };
                     });
