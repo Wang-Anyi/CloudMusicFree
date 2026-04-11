@@ -35,10 +35,10 @@ createApp({
         let currentSongId = '';
         let currentSongArtist = '';
         
-        // 新增：用于全屏播放器的歌单切换
-        let currentPlaylistSongs = [];     // 当前歌单的歌曲列表（仅用于自定义歌单切换）
-        let currentPlaylistType = 'history'; // 'history' 或 'custom'
-        let currentPlaylistIndex = -1;       // 当前播放歌曲在歌单中的索引
+        // 用于全屏播放器的歌单切换
+        let currentPlaylistSongs = [];
+        let currentPlaylistType = 'history';
+        let currentPlaylistIndex = -1;
         
         const fullscreenPlayerVisible = ref(false);
         const fullscreenCover = ref('');
@@ -451,13 +451,11 @@ createApp({
                 currentSongArtist = currentArtist.value;
                 addToHistory(songId, songName, currentArtist.value, currentCover.value);
                 
-                // 更新歌单切换相关状态
                 if (playlistSongs && playlistIndex >= 0) {
                     currentPlaylistSongs = playlistSongs;
                     currentPlaylistIndex = playlistIndex;
                     currentPlaylistType = playlistType;
                 } else {
-                    // 如果不是从歌单播放的，清空歌单状态（之后使用历史记录）
                     currentPlaylistSongs = [];
                     currentPlaylistIndex = -1;
                     currentPlaylistType = 'history';
@@ -489,7 +487,7 @@ createApp({
             }
         };
         
-        // ---------- 下载（修复 TCON）----------
+        // ---------- 下载 ----------
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src || audio.src === '') {
@@ -646,14 +644,12 @@ createApp({
             }
         };
         
-        // 通用：加载歌单歌曲（limit 提高到 1000）
         const fetchPlaylistTracks = async (playlistId, plName, isCustom = false) => {
             searchResults.value = [];
             searchPerformed.value = true;
             loadingSearch.value = true;
             
             try {
-                // 使用 limit=1000 尽量获取全部歌曲
                 const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=1000`, { timeout: 15000 });
                 if (res.data && res.data.songs) {
                     const tracks = res.data.songs;
@@ -680,13 +676,10 @@ createApp({
                     searchResults.value = songList;
                     playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
                     
-                    // 如果是自定义歌单，保存歌曲列表供全屏切换使用
                     if (isCustom) {
                         currentPlaylistSongs = songList;
                         currentPlaylistType = 'custom';
                     } else {
-                        // 默认歌单不清空，但切换时仍使用历史记录，所以无需特殊处理
-                        // 但为了统一，如果点击默认歌单，我们仍然可以允许在全屏内使用歌单切换？根据需求，默认歌单不使用此功能，所以保持 history 模式
                         currentPlaylistType = 'history';
                         currentPlaylistSongs = [];
                     }
@@ -702,12 +695,10 @@ createApp({
             }
         };
         
-        // 热门歌单点击（非自定义）
         const onDefaultPlaylistClick = (playlistId, plName) => {
             fetchPlaylistTracks(playlistId, plName, false);
         };
         
-        // 自定义歌单加载
         const loadCustomPlaylist = async () => {
             const input = playlistUrlInput.value.trim();
             if (!input) return alert('请输入歌单链接或ID');
@@ -719,20 +710,17 @@ createApp({
             await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`, true);
         };
         
-        // ---------- 全屏播放器 上一曲/下一曲（根据歌单类型）----------
-        const fullscreenPrev = () => {
+        // ---------- 上一曲/下一曲（主页和全屏共用）----------
+        const playPrev = () => {
             if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
-                // 自定义歌单：在歌单列表内切换
                 if (currentPlaylistIndex <= 0) {
                     playErrorMsg.value = '已经是歌单第一首';
                     setTimeout(() => { if (playErrorMsg.value === '已经是歌单第一首') playErrorMsg.value = ''; }, 1500);
                     return;
                 }
                 const prevSong = currentPlaylistSongs[currentPlaylistIndex - 1];
-                // 播放时更新索引
                 playSongById(prevSong.id, prevSong.name, prevSong.artist, prevSong.picUrl, currentPlaylistSongs, currentPlaylistIndex - 1, 'custom');
             } else {
-                // 默认歌单或历史模式：使用最近播放历史
                 if (playHistory.value.length < 2) {
                     playErrorMsg.value = '没有上一曲';
                     setTimeout(() => { if (playErrorMsg.value === '没有上一曲') playErrorMsg.value = ''; }, 1500);
@@ -749,9 +737,8 @@ createApp({
             }
         };
         
-        const fullscreenNext = () => {
+        const playNext = () => {
             if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
-                // 自定义歌单：在歌单列表内切换
                 if (currentPlaylistIndex >= currentPlaylistSongs.length - 1) {
                     playErrorMsg.value = '已经是歌单最后一首';
                     setTimeout(() => { if (playErrorMsg.value === '已经是歌单最后一首') playErrorMsg.value = ''; }, 1500);
@@ -760,7 +747,6 @@ createApp({
                 const nextSong = currentPlaylistSongs[currentPlaylistIndex + 1];
                 playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.picUrl, currentPlaylistSongs, currentPlaylistIndex + 1, 'custom');
             } else {
-                // 默认歌单或历史模式：使用最近播放历史
                 if (playHistory.value.length < 2) {
                     playErrorMsg.value = '没有下一曲';
                     setTimeout(() => { if (playErrorMsg.value === '没有下一曲') playErrorMsg.value = ''; }, 1500);
@@ -970,7 +956,8 @@ createApp({
             fullscreenCover, fullscreenSongName, fullscreenArtist,
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
             fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
-            fullscreenTogglePlayPause, fullscreenSeek, fullscreenPrev, fullscreenNext,
+            fullscreenTogglePlayPause, fullscreenSeek,
+            playPrev, playNext,  // 主页和全屏共用的上一曲/下一曲
             currentTheme, openThemeModal, closeThemeModal, setTheme
         };
     }
