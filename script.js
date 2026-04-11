@@ -36,7 +36,7 @@ createApp({
         // 推荐歌单
         const recommendPlaylists = ref([]);
         
-        // 稳定的公共 API (Binaryify/NeteaseCloudMusicApi 官方演示实例)
+        // ✅ 稳定的公共 API (Binaryify/NeteaseCloudMusicApi 官方演示实例，支持跨域)
         const API_BASE = 'https://netease-cloud-music-api-five-roan-88.vercel.app';
         
         // ---------- 辅助函数 ----------
