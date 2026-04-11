@@ -229,11 +229,11 @@
                         <span class="slider-value">{{ bgBlur }}%</span>
                     </div>
                     
-                    <div class="settings-title" style="margin-top: 20px;">🎴 卡片模糊度</div>
-                    <div class="settings-desc">范围 0-100，数值越大越模糊（0 = 不模糊）</div>
+                    <div class="settings-title" style="margin-top: 20px;">🎴 卡片透明度</div>
+                    <div class="settings-desc">范围 20-100%，数值越大越不透明（100% = 完全不透明）</div>
                     <div class="slider-container">
-                        <input type="range" v-model.number="cardBlur" min="0" max="100" step="1" class="settings-slider" @input="saveCardBlur">
-                        <span class="slider-value">{{ cardBlur }}%</span>
+                        <input type="range" v-model.number="cardOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveCardOpacity">
+                        <span class="slider-value">{{ cardOpacity }}%</span>
                     </div>
                     
                     <div class="settings-title" style="margin-top: 20px;">✨ 卡片背景模糊化开关</div>
