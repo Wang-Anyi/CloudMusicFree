@@ -58,7 +58,7 @@ createApp({
         const bgImageUrl = ref('');
         const blurEnabled = ref(false);
         const bgBlur = ref(0);
-        const cardBlur = ref(0);
+        const cardOpacity = ref(100);  // 透明度百分比，默认 100%
         
         // ---------- API 列表 ----------
         const API_LIST = [
@@ -934,16 +934,15 @@ createApp({
                     document.body.classList.remove('blur-enabled');
                 }
             }
-            // 加载模糊度
             const savedBgBlur = localStorage.getItem('bgBlur');
             if (savedBgBlur !== null) {
                 bgBlur.value = parseInt(savedBgBlur);
                 document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`);
             }
-            const savedCardBlur = localStorage.getItem('cardBlur');
-            if (savedCardBlur !== null) {
-                cardBlur.value = parseInt(savedCardBlur);
-                document.body.style.setProperty('--card-blur-amount', `${cardBlur.value / 10}px`);
+            const savedCardOpacity = localStorage.getItem('cardOpacity');
+            if (savedCardOpacity !== null) {
+                cardOpacity.value = parseInt(savedCardOpacity);
+                document.body.style.setProperty('--card-opacity', cardOpacity.value / 100);
             }
         };
         
@@ -989,9 +988,9 @@ createApp({
             document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`);
         };
         
-        const saveCardBlur = () => {
-            localStorage.setItem('cardBlur', cardBlur.value);
-            document.body.style.setProperty('--card-blur-amount', `${cardBlur.value / 10}px`);
+        const saveCardOpacity = () => {
+            localStorage.setItem('cardOpacity', cardOpacity.value);
+            document.body.style.setProperty('--card-opacity', cardOpacity.value / 100);
         };
         
         const openSettingsModal = () => {
@@ -1079,8 +1078,8 @@ createApp({
             fullscreenTogglePlayPause, fullscreenSeek,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
-            bgImageUrl, blurEnabled, bgBlur, cardBlur, bodyBackgroundStyle,
-            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardBlur,
+            bgImageUrl, blurEnabled, bgBlur, cardOpacity, bodyBackgroundStyle,
+            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity,
             openSettingsModal, closeSettingsModal
         };
     }
