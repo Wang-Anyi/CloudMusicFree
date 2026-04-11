@@ -103,7 +103,9 @@
                         </div>
                         <audio ref="audioPlayer" @timeupdate="updateProgress" @loadedmetadata="onLoadedMetadata" @ended="onAudioEnded" @error="onAudioError" style="display:none;"></audio>
                         <div class="audio-control-buttons">
+                            <button class="ctrl-btn" @click="playPrev">⏮ 上一曲</button>
                             <button class="ctrl-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️ 暂停' : '▶️ 播放' }}</button>
+                            <button class="ctrl-btn" @click="playNext">⏭ 下一曲</button>
                             <button class="ctrl-btn" @click="stopAudio">⏹️ 停止</button>
                             <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                         </div>
@@ -142,7 +144,7 @@
         </div>
     </div>
 
-    <!-- 全屏播放器 -->
+    <!-- 全屏播放器（完全占满浏览器视口） -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -176,9 +178,9 @@
                     <input type="range" v-model="volumeValue" @input="changeVolume" min="0" max="1" step="0.01">
                 </div>
                 <div class="fullscreen-buttons">
-                    <button class="ctrl-btn" @click="fullscreenPrev">⏮ 上一曲</button>
+                    <button class="ctrl-btn" @click="playPrev">⏮ 上一曲</button>
                     <button class="ctrl-btn" @click="fullscreenTogglePlayPause">{{ fullscreenIsPlaying ? '⏸️ 暂停' : '▶️ 播放' }}</button>
-                    <button class="ctrl-btn" @click="fullscreenNext">⏭ 下一曲</button>
+                    <button class="ctrl-btn" @click="playNext">⏭ 下一曲</button>
                     <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                 </div>
             </div>
