@@ -230,6 +230,9 @@ body {
     border-radius: 32px;
     padding: 20px;
     backdrop-filter: blur(4px);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 .search-card {
     margin-bottom: 24px;
@@ -382,8 +385,9 @@ body {
     padding-left: 12px;
 }
 .song-list {
-    max-height: 420px;
+    flex: 1;
     overflow-y: auto;
+    max-height: none;
 }
 .song-item {
     display: flex;
@@ -616,6 +620,10 @@ body {
     background: #ea8c5c;
     color: white;
 }
+.icon-btn {
+    font-size: 1.2rem;
+    padding: 8px 16px;
+}
 .download-btn {
     background: #6c8b6e;
     color: white;
@@ -703,6 +711,12 @@ body {
     padding: 6px;
     border-radius: 60px;
     background: rgba(0,0,0,0.3);
+}
+.error-msg {
+    color: #d44c2f;
+    font-size: 0.8rem;
+    text-align: center;
+    margin-top: 8px;
 }
 
 /* 模态框通用样式 */
@@ -1118,4 +1132,21 @@ input:checked + .slider:before {
 .left-panel > *, .player-card > *, .lyrics-card > *, .history-card > * {
     position: relative;
     z-index: 1;
+}
+
+/* 个人歌单网格（5列，滚动） */
+.playlist-grid-container {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 16px;
+}
+.playlist-grid.five-cols {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+}
+@media (max-width: 600px) {
+    .playlist-grid.five-cols {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
