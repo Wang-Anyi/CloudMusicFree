@@ -755,46 +755,49 @@ createApp({
             playlistError.value = '';
             userPlaylists.value = [];
             
-            try {
-                // 首先通过 cookie 获取用户信息（获取 uid）
-                const accountRes = await axios.get(`${API_LIST[0]}/user/account`, {
-                    params: { cookie: userCookie.value }
-                });
-                if (accountRes.data && accountRes.data.code === 200 && accountRes.data.profile) {
-                    const uid = accountRes.data.profile.userId;
-                    // 获取用户歌单列表
-                    const playlistRes = await axios.get(`${API_LIST[0]}/user/playlist`, {
-                        params: { uid: uid, cookie: userCookie.value, limit: 100 }
+            const maxRetries = API_LIST.length;
+            let lastError = null;
+            let playlists = null;
+            
+            for (let i = 0; i < maxRetries; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                try {
+                    // 使用 POST 请求传递 Cookie（避免 URL 过长）
+                    const res = await axios.post(`${apiBase}/user/playlist`, {
+                        cookie: userCookie.value,
+                        limit: 100
+                    }, {
+                        timeout: 10000,
+                        headers: { 'Content-Type': 'application/json' }
                     });
-                    if (playlistRes.data && playlistRes.data.code === 200 && playlistRes.data.playlist) {
-                        // 过滤掉收藏的歌单（如果有）和太小的，通常第一个是“我喜欢的音乐”
-                        const playlists = playlistRes.data.playlist.map(pl => ({
+                    if (res.data && res.data.code === 200 && res.data.playlist) {
+                        playlists = res.data.playlist.map(pl => ({
                             id: pl.id,
                             name: pl.name,
                             coverImgUrl: pl.coverImgUrl,
                             trackCount: pl.trackCount
                         }));
-                        userPlaylists.value = playlists;
-                        if (playlists.length === 0) {
-                            playlistError.value = '未找到歌单';
-                        }
+                        currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                        break;
                     } else {
-                        playlistError.value = '获取歌单失败，请检查 Cookie 是否有效';
+                        console.warn(`[个人歌单] ${apiBase} 返回数据异常`);
                     }
-                } else {
-                    playlistError.value = 'Cookie 无效或已过期';
+                } catch (err) {
+                    console.warn(`[个人歌单] ${apiBase} 失败:`, err.message);
+                    lastError = err;
                 }
-            } catch (err) {
-                console.error('获取歌单失败:', err);
-                playlistError.value = '网络错误，请重试';
-            } finally {
-                playlistLoading.value = false;
             }
+            
+            if (playlists && playlists.length) {
+                userPlaylists.value = playlists;
+            } else {
+                playlistError.value = '未找到歌单，请检查 Cookie 是否有效';
+            }
+            playlistLoading.value = false;
         };
         
         const selectUserPlaylist = async (playlist) => {
             closeMyPlaylistsModal();
-            // 加载该歌单的歌曲
             await fetchPlaylistTracks(playlist.id, playlist.name, true);
         };
         
@@ -1157,7 +1160,9 @@ createApp({
             const myPlaylistsModal = document.getElementById('myPlaylistsModal');
             if (myPlaylistsModal) {
                 const closeBtn = document.getElementById('closeMyPlaylistsBtn');
+                const confirmBtn = document.getElementById('confirmMyPlaylistsBtn');
                 if (closeBtn) closeBtn.onclick = closeMyPlaylistsModal;
+                if (confirmBtn) confirmBtn.onclick = closeMyPlaylistsModal;
                 myPlaylistsModal.onclick = (e) => { if (e.target === myPlaylistsModal) closeMyPlaylistsModal(); };
             }
         };
@@ -1196,7 +1201,6 @@ createApp({
             bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, bodyBackgroundStyle,
             saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveMaskOpacity,
             openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal,
-            // 个人歌单
             userCookie, userPlaylists, playlistLoading, playlistError,
             openMyPlaylistsModal, closeMyPlaylistsModal, fetchUserPlaylists, selectUserPlaylist
         };
