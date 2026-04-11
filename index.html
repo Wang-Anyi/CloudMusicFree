@@ -236,6 +236,13 @@
                         <span class="slider-value">{{ cardOpacity }}%</span>
                     </div>
                     
+                    <div class="settings-title" style="margin-top: 20px;">🎭 卡片遮罩透明度</div>
+                    <div class="settings-desc">范围 20-100%，数值越大遮罩越明显（仅当模糊开关开启时生效）</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="maskOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveMaskOpacity">
+                        <span class="slider-value">{{ maskOpacity }}%</span>
+                    </div>
+                    
                     <div class="settings-title" style="margin-top: 20px;">✨ 卡片背景模糊化开关</div>
                     <div class="settings-desc">开启后卡片背景将带有高斯模糊效果（略带主题色）</div>
                     <label class="switch-label">
