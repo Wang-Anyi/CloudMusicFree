@@ -6,9 +6,15 @@
     --container-bg: rgba(255, 255, 255, 0.75);
     --text-primary: #2d241e;
     --text-secondary: #6b4e3a;
-    --card-bg: rgba(255, 255, 255, 0.5);
-    --player-card-bg: rgba(30, 20, 15, 0.85);
-    --lyrics-card-bg: rgba(255, 250, 240, 0.85);
+    --card-bg-r: 255;
+    --card-bg-g: 255;
+    --card-bg-b: 255;
+    --player-card-bg-r: 30;
+    --player-card-bg-g: 20;
+    --player-card-bg-b: 15;
+    --lyrics-card-bg-r: 255;
+    --lyrics-card-bg-g: 250;
+    --lyrics-card-bg-b: 240;
     --lyrics-text: #6f4e36;
     --lyrics-active-bg: #fff0e4;
     --lyrics-active-color: #d44c2f;
@@ -20,7 +26,7 @@
     --ctrl-btn-bg: #f0cfb6;
     --ctrl-btn-color: #4f2a18;
     --bg-blur-amount: 0px;
-    --card-blur-amount: 0px;
+    --card-opacity: 1;
 }
 
 /* 暗夜黑主题 */
@@ -30,9 +36,15 @@
     --container-bg: rgba(0, 0, 0, 0.75);
     --text-primary: #e0e0e0;
     --text-secondary: #b0b0b0;
-    --card-bg: rgba(30, 30, 40, 0.6);
-    --player-card-bg: rgba(10, 10, 15, 0.9);
-    --lyrics-card-bg: rgba(25, 25, 35, 0.85);
+    --card-bg-r: 30;
+    --card-bg-g: 30;
+    --card-bg-b: 40;
+    --player-card-bg-r: 10;
+    --player-card-bg-g: 10;
+    --player-card-bg-b: 15;
+    --lyrics-card-bg-r: 25;
+    --lyrics-card-bg-g: 25;
+    --lyrics-card-bg-b: 35;
     --lyrics-text: #c0c0c0;
     --lyrics-active-bg: #2a2a3a;
     --lyrics-active-color: #ea8c5c;
@@ -52,9 +64,15 @@
     --container-bg: rgba(255, 255, 255, 0.85);
     --text-primary: #004d40;
     --text-secondary: #00695c;
-    --card-bg: rgba(255, 255, 255, 0.6);
-    --player-card-bg: rgba(0, 77, 64, 0.9);
-    --lyrics-card-bg: rgba(224, 242, 241, 0.9);
+    --card-bg-r: 255;
+    --card-bg-g: 255;
+    --card-bg-b: 255;
+    --player-card-bg-r: 0;
+    --player-card-bg-g: 77;
+    --player-card-bg-b: 64;
+    --lyrics-card-bg-r: 224;
+    --lyrics-card-bg-g: 242;
+    --lyrics-card-bg-b: 241;
     --lyrics-text: #004d40;
     --lyrics-active-bg: #b2dfdb;
     --lyrics-active-color: #00796b;
@@ -74,9 +92,15 @@
     --container-bg: rgba(255, 255, 255, 0.85);
     --text-primary: #4a148c;
     --text-secondary: #6a1b9a;
-    --card-bg: rgba(255, 255, 255, 0.6);
-    --player-card-bg: rgba(74, 20, 140, 0.9);
-    --lyrics-card-bg: rgba(243, 229, 245, 0.9);
+    --card-bg-r: 255;
+    --card-bg-g: 255;
+    --card-bg-b: 255;
+    --player-card-bg-r: 74;
+    --player-card-bg-g: 20;
+    --player-card-bg-b: 140;
+    --lyrics-card-bg-r: 243;
+    --lyrics-card-bg-g: 229;
+    --lyrics-card-bg-b: 245;
     --lyrics-text: #4a148c;
     --lyrics-active-bg: #e1bee7;
     --lyrics-active-color: #8e24aa;
@@ -96,9 +120,15 @@
     --container-bg: rgba(255, 255, 255, 0.85);
     --text-primary: #bf360c;
     --text-secondary: #e65100;
-    --card-bg: rgba(255, 255, 255, 0.6);
-    --player-card-bg: rgba(191, 54, 12, 0.9);
-    --lyrics-card-bg: rgba(255, 243, 224, 0.9);
+    --card-bg-r: 255;
+    --card-bg-g: 255;
+    --card-bg-b: 255;
+    --player-card-bg-r: 191;
+    --player-card-bg-g: 54;
+    --player-card-bg-b: 12;
+    --lyrics-card-bg-r: 255;
+    --lyrics-card-bg-g: 243;
+    --lyrics-card-bg-b: 224;
     --lyrics-text: #bf360c;
     --lyrics-active-bg: #ffe0b2;
     --lyrics-active-color: #f57c00;
@@ -191,7 +221,7 @@ body {
 }
 
 .left-panel {
-    background: var(--card-bg);
+    background: rgba(var(--card-bg-r), var(--card-bg-g), var(--card-bg-b), var(--card-opacity));
     border-radius: 32px;
     padding: 20px;
     backdrop-filter: blur(4px);
@@ -474,7 +504,7 @@ body {
     gap: 24px;
 }
 .player-card {
-    background: var(--player-card-bg);
+    background: rgba(var(--player-card-bg-r), var(--player-card-bg-g), var(--player-card-bg-b), var(--card-opacity));
     backdrop-filter: blur(12px);
     border-radius: 40px;
     padding: 20px;
@@ -589,8 +619,15 @@ body {
     background: #4a6b4c;
 }
 
-.lyrics-card, .history-card {
-    background: var(--lyrics-card-bg);
+.lyrics-card {
+    background: rgba(var(--lyrics-card-bg-r), var(--lyrics-card-bg-g), var(--lyrics-card-bg-b), var(--card-opacity));
+    backdrop-filter: blur(8px);
+    border-radius: 32px;
+    padding: 16px 18px;
+    color: var(--text-primary);
+}
+.history-card {
+    background: rgba(var(--lyrics-card-bg-r), var(--lyrics-card-bg-g), var(--lyrics-card-bg-b), var(--card-opacity));
     backdrop-filter: blur(8px);
     border-radius: 32px;
     padding: 16px 18px;
@@ -1045,14 +1082,7 @@ input:checked + .slider:before {
     transform: translateX(26px);
 }
 
-/* 卡片模糊效果 */
-.left-panel,
-.player-card,
-.lyrics-card,
-.history-card {
-    backdrop-filter: blur(var(--card-blur-amount));
-    transition: backdrop-filter 0.2s ease;
-}
+/* 卡片背景模糊化开关效果 */
 .blur-enabled .left-panel,
 .blur-enabled .player-card,
 .blur-enabled .lyrics-card,
