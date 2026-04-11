@@ -36,7 +36,7 @@ createApp({
         // 推荐歌单
         const recommendPlaylists = ref([]);
         
-        // 当前播放歌曲的 VIP 状态和详细信息（用于下载）
+        // 当前播放歌曲的 VIP 状态和详细信息
         const currentIsVip = ref(false);
         let currentSongId = '';
         let currentSongArtist = '';
@@ -57,8 +57,8 @@ createApp({
         // 暗色/浅色模式
         const isDarkMode = ref(false);
         
-        // API 地址
-        const API_BASE = 'https://api-enhanced-wine-tau.vercel.app';
+        // API 地址（可替换为您自己的或稳定的公共 API）
+        const API_BASE = 'https://api.liyefeng.top';
         
         // 弹窗相关
         let pendingVipSong = null;
@@ -101,9 +101,14 @@ createApp({
             }
         };
         
-        // ---------- 主题切换 ----------
+        // ---------- 主题切换（修复：直接操作 body 类，确保全局生效）----------
         const toggleTheme = () => {
             isDarkMode.value = !isDarkMode.value;
+            if (isDarkMode.value) {
+                document.body.classList.add('dark-mode');
+            } else {
+                document.body.classList.remove('dark-mode');
+            }
             localStorage.setItem('darkMode', isDarkMode.value);
         };
         
@@ -112,9 +117,39 @@ createApp({
             if (saved !== null) {
                 isDarkMode.value = saved === 'true';
             } else {
-                // 可选：根据系统主题自动设置
                 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
                 isDarkMode.value = prefersDark;
+            }
+            if (isDarkMode.value) {
+                document.body.classList.add('dark-mode');
+            } else {
+                document.body.classList.remove('dark-mode');
+            }
+        };
+        
+        // ---------- 歌词滚动（修复：仅滚动歌词容器，不滚动整个页面）----------
+        const scrollLyricsToActive = () => {
+            if (!lyricsContainer.value) return;
+            const container = lyricsContainer.value;
+            const activeLine = container.querySelector('.lyric-line.active');
+            if (activeLine) {
+                const containerRect = container.getBoundingClientRect();
+                const activeRect = activeLine.getBoundingClientRect();
+                const offset = activeRect.top - containerRect.top - container.clientHeight / 2 + activeRect.height / 2;
+                container.scrollTop += offset;
+            }
+        };
+        
+        // 全屏歌词滚动
+        const scrollFullscreenLyricsToActive = () => {
+            const container = document.querySelector('.fullscreen-lyrics-scroll');
+            if (!container) return;
+            const activeLine = container.querySelector('.fullscreen-lyric-line.active');
+            if (activeLine) {
+                const containerRect = container.getBoundingClientRect();
+                const activeRect = activeLine.getBoundingClientRect();
+                const offset = activeRect.top - containerRect.top - container.clientHeight / 2 + activeRect.height / 2;
+                container.scrollTop += offset;
             }
         };
         
@@ -168,19 +203,13 @@ createApp({
             if (idx !== currentLyricIndex.value) {
                 currentLyricIndex.value = idx;
                 fullscreenLyricIndex.value = idx;
-                if (idx >= 0 && lyricsContainer.value) {
-                    const activeEl = lyricsContainer.value.querySelector('.lyric-line.active');
-                    if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-                if (fullscreenPlayerVisible.value && fullscreenLyricIndex.value >= 0) {
-                    nextTick(() => {
-                        const container = document.querySelector('.fullscreen-lyrics-scroll');
-                        if (container) {
-                            const activeLine = container.querySelector('.fullscreen-lyric-line.active');
-                            if (activeLine) activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                    });
-                }
+                // 使用新的滚动方法，不滚动页面
+                nextTick(() => {
+                    scrollLyricsToActive();
+                    if (fullscreenPlayerVisible.value) {
+                        scrollFullscreenLyricsToActive();
+                    }
+                });
             }
         };
         
@@ -191,38 +220,41 @@ createApp({
             playErrorMsg.value = '';
             try {
                 const urlRes = await axios.get(`${API_BASE}/song/url?id=${songId}`, { timeout: 15000 });
-                if (urlRes.data && urlRes.data.data && urlRes.data.data[0]) {
-                    const musicUrlRaw = urlRes.data.data[0].url;
-                    if (musicUrlRaw) {
-                        const musicUrl = toHttps(musicUrlRaw);
-                        currentSongName.value = songName || '未知歌曲';
-                        currentArtist.value = artistName || '网易云音乐';
-                        currentCover.value = toHttps(coverUrl || '');
-                        currentIsVip.value = false;
-                        currentSongId = songId;
-                        currentSongArtist = currentArtist.value;
-                        addToHistory(songId, songName, currentArtist.value, currentCover.value);
-                        
-                        fullscreenSongName.value = currentSongName.value;
-                        fullscreenArtist.value = currentArtist.value;
-                        fullscreenCover.value = currentCover.value;
-                        
-                        const audio = audioPlayer.value;
-                        if (audio) {
-                            audio.src = musicUrl;
-                            currentAudioSrc = musicUrl;
-                            audio.volume = volumeValue.value;
-                            await audio.play();
-                            isPlaying.value = true;
-                            fullscreenIsPlaying.value = true;
-                        }
-                        fetchLyrics(songId);
-                    } else {
-                        playErrorMsg.value = '该歌曲暂无可用播放地址（可能是 VIP 或版权限制）';
-                        throw new Error('播放地址为空');
+                let musicUrl = null;
+                if (urlRes.data && urlRes.data.data && urlRes.data.data[0] && urlRes.data.data[0].url) {
+                    musicUrl = urlRes.data.data[0].url;
+                } else if (urlRes.data && urlRes.data.url) {
+                    musicUrl = urlRes.data.url;
+                } else if (typeof urlRes.data === 'string') {
+                    musicUrl = urlRes.data;
+                }
+                
+                if (musicUrl) {
+                    musicUrl = toHttps(musicUrl);
+                    currentSongName.value = songName || '未知歌曲';
+                    currentArtist.value = artistName || '网易云音乐';
+                    currentCover.value = toHttps(coverUrl || '');
+                    currentIsVip.value = false;
+                    currentSongId = songId;
+                    currentSongArtist = currentArtist.value;
+                    addToHistory(songId, songName, currentArtist.value, currentCover.value);
+                    
+                    fullscreenSongName.value = currentSongName.value;
+                    fullscreenArtist.value = currentArtist.value;
+                    fullscreenCover.value = currentCover.value;
+                    
+                    const audio = audioPlayer.value;
+                    if (audio) {
+                        audio.src = musicUrl;
+                        currentAudioSrc = musicUrl;
+                        audio.volume = volumeValue.value;
+                        await audio.play();
+                        isPlaying.value = true;
+                        fullscreenIsPlaying.value = true;
                     }
+                    fetchLyrics(songId);
                 } else {
-                    throw new Error('API 返回数据格式异常');
+                    throw new Error('未获取到播放地址');
                 }
             } catch (err) {
                 console.error('播放错误:', err);
