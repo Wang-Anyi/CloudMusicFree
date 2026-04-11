@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>云音匣 · 网易云免费播放器</title>
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@4.4.0/dist/browser-id3-writer.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body :class="currentTheme">
+<div id="app">
+    <div class="app-container">
+        <div class="header">
+            <div class="header-left">
+                <h1>🎵 云音匣 · 免费听</h1>
+                <p>搜索歌曲 / ID解析 · 高品质在线播放 · 歌词同步 · 热门歌单</p>
+            </div>
+            <button class="theme-toggle" @click="openThemeModal">🎨 主题</button>
+        </div>
+
+        <div class="main-grid">
+            <div class="left-panel">
+                <div class="search-card">
+                    <div class="search-box">
+                        <input type="text" class="search-input" v-model="searchKeyword" placeholder="输入歌名 / 歌手 例如：晴天 周杰伦" @keyup.enter="searchSongs">
+                        <button class="btn btn-primary" @click="searchSongs">🔍 搜索</button>
+                    </div>
+                    <div class="id-parse-group">
+                        <input type="text" class="small-input" v-model="songIdInput" placeholder="网易云歌曲ID 或 链接 (如 id=1869882)">
+                        <button class="btn btn-outline" @click="parseById">🎧 解析播放</button>
+                    </div>
+                    <div class="id-parse-group" style="margin-top: 12px;">
+                        <input type="text" class="small-input" v-model="playlistUrlInput" placeholder="网易云歌单链接 或 ID (如 12390308466)">
+                        <button class="btn btn-outline" @click="loadCustomPlaylist">📋 加载歌单</button>
+                    </div>
+                </div>
+
+                <div class="playlist-section">
+                    <div class="section-title">
+                        <span>🔥 热门推荐歌单</span>
+                        <span class="refresh-btn" @click="loadPlaylists">⟳ 换一换</span>
+                    </div>
+                    <div class="playlist-grid">
+                        <div class="playlist-item" v-for="pl in recommendPlaylists" :key="pl.id" @click="fetchPlaylistTracks(pl.id, pl.name)">
+                            <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=pl'" class="pl-cover" alt="cover">
+                            <div class="pl-name">{{ pl.name }}</div>
+                            <div class="pl-count">📀 {{ pl.trackCount || 0 }}首</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="results-header">
+                    <span>🎶 搜索结果</span>
+                    <span style="font-size:12px;">点击右侧▶️播放</span>
+                </div>
+                <div class="song-list" v-if="searchResults.length">
+                    <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
+                        <div class="song-info">
+                            <div class="cover-wrapper">
+                                <img class="song-cover" :src="song.picUrl" :data-id="song.id" @load="onImageLoad($event, song.id)" @error="onImageError($event, song.id)" alt="cover">
+                                <div class="cover-loading" v-if="song.loadingCover">📷 正在加载图片...</div>
+                            </div>
+                            <div class="song-details">
+                                <div class="song-name">
+                                    {{ song.name }}
+                                    <span class="badge-free" v-if="!song.isVip">免费</span>
+                                    <span class="badge-vip" v-else>VIP</span>
+                                </div>
+                                <div class="song-artist">{{ song.artist }} · {{ formatDuration(song.duration) }}</div>
+                            </div>
+                        </div>
+                        <button class="play-btn-small" @click.stop="handlePlayClick(song)">▶ 播放</button>
+                    </div>
+                </div>
+                <div v-else-if="loadingSearch" class="empty-tip">⏳ 正在搜索，请稍候...</div>
+                <div v-else-if="!loadingSearch && searchPerformed && searchResults.length===0" class="empty-tip">😔 没有找到相关歌曲，换个关键词试试~</div>
+                <div v-else class="empty-tip">✨ 试试搜索「周杰伦」或点击上方歌单</div>
+            </div>
+
+            <div class="right-panel">
+                <div class="player-card">
+                    <div class="player-header">
+                        <div class="track-title">{{ currentSongName || '未播放' }}</div>
+                        <button class="fullscreen-btn" @click="openFullscreenPlayer">⛶</button>
+                    </div>
+                    <div class="now-playing">
+                        <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover">
+                        <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
+                        <div class="player-controls">
+                            <div class="progress-bar-container">
+                                <span class="time-current">{{ formatTime(currentTime) }}</span>
+                                <input type="range" class="progress-bar" v-model="progressValue" @input="seekAudio" min="0" max="100" step="0.1">
+                                <span class="time-duration">{{ formatTime(duration) }}</span>
+                            </div>
+                            <div class="volume-control">
+                                <span>🔊</span>
+                                <input type="range" v-model="volumeValue" @input="changeVolume" min="0" max="1" step="0.01">
+                            </div>
+                        </div>
+                        <audio ref="audioPlayer" @timeupdate="updateProgress" @loadedmetadata="onLoadedMetadata" @ended="onAudioEnded" @error="onAudioError" style="display:none;"></audio>
+                        <div class="audio-control-buttons">
+                            <button class="ctrl-btn" @click="playPrev">⏮ 上一曲</button>
+                            <button class="ctrl-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️ 暂停' : '▶️ 播放' }}</button>
+                            <button class="ctrl-btn" @click="playNext">⏭ 下一曲</button>
+                            <button class="ctrl-btn" @click="stopAudio">⏹️ 停止</button>
+                            <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
+                        </div>
+                        <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
+                        <div v-if="playErrorMsg" class="loading-tip" style="background:#ffdad2; color:#b13e1a;">{{ playErrorMsg }}</div>
+                    </div>
+                </div>
+
+                <div class="lyrics-card">
+                    <div class="section-title">📃 滚动歌词</div>
+                    <div class="lyrics-container" ref="lyricsContainer">
+                        <div v-if="lyricsLines.length" class="lyrics-lines">
+                            <div v-for="(line, idx) in lyricsLines" :key="idx" :class="['lyric-line', { active: currentLyricIndex === idx }]">
+                                {{ line.text }}
+                            </div>
+                        </div>
+                        <div v-else class="empty-lyrics">暂无歌词 (或纯音乐)</div>
+                    </div>
+                </div>
+
+                <div class="history-card">
+                    <div class="section-title">🕘 最近播放</div>
+                    <div class="history-list" v-if="playHistory.length">
+                        <div v-for="(item, idx) in playHistory" :key="idx" class="history-item" @click="playSongById(item.id, item.name, item.artist, item.cover)">
+                            <span>{{ idx+1 }}.</span>
+                            <span class="history-name">{{ item.name }}</span>
+                            <span class="history-artist">{{ item.artist }}</span>
+                        </div>
+                    </div>
+                    <div v-else class="empty-lyrics">暂无播放记录</div>
+                </div>
+            </div>
+        </div>
+        <div class="footer-note">
+            🎧 10 个 API 自动故障转移 · 空格键播放/暂停 · 下载带封面MP3
+        </div>
+    </div>
+
+    <!-- 全屏播放器（完全占满浏览器视口） -->
+    <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
+        <div class="fullscreen-container">
+            <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
+            <div class="fullscreen-content">
+                <div class="fullscreen-cover">
+                    <img :src="fullscreenCover" alt="cover">
+                </div>
+                <div class="fullscreen-lyrics">
+                    <div class="fullscreen-lyrics-header">
+                        <div class="fullscreen-song">{{ fullscreenSongName }}</div>
+                        <div class="fullscreen-artist">{{ fullscreenArtist }}</div>
+                    </div>
+                    <div class="fullscreen-lyrics-scroll" ref="fullscreenLyricsContainer">
+                        <div v-if="fullscreenLyrics.length">
+                            <div v-for="(line, idx) in fullscreenLyrics" :key="idx" :class="['fullscreen-lyric-line', { 'active': fullscreenLyricIndex === idx }]">
+                                {{ line.text }}
+                            </div>
+                        </div>
+                        <div v-else class="empty-lyrics">暂无歌词</div>
+                    </div>
+                </div>
+            </div>
+            <div class="fullscreen-controls">
+                <div class="fullscreen-progress">
+                    <span class="time-current">{{ formatTime(fullscreenCurrentTime) }}</span>
+                    <input type="range" class="progress-bar" v-model="fullscreenProgressValue" @input="fullscreenSeek" min="0" max="100" step="0.1">
+                    <span class="time-duration">{{ formatTime(fullscreenDuration) }}</span>
+                </div>
+                <div class="fullscreen-volume">
+                    <span>🔊</span>
+                    <input type="range" v-model="volumeValue" @input="changeVolume" min="0" max="1" step="0.01">
+                </div>
+                <div class="fullscreen-buttons">
+                    <button class="ctrl-btn" @click="playPrev">⏮ 上一曲</button>
+                    <button class="ctrl-btn" @click="fullscreenTogglePlayPause">{{ fullscreenIsPlaying ? '⏸️ 暂停' : '▶️ 播放' }}</button>
+                    <button class="ctrl-btn" @click="playNext">⏭ 下一曲</button>
+                    <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主题选择弹窗 -->
+    <div id="themeModal" class="modal" style="display: none;">
+        <div class="modal-content theme-modal-content">
+            <div class="modal-header">
+                <span>🎨 选择主题颜色</span>
+                <button class="modal-close" @click="closeThemeModal">&times;</button>
+            </div>
+            <div class="theme-buttons">
+                <button class="theme-btn theme-default" @click="setTheme('theme-default')">🌿 默认暖色</button>
+                <button class="theme-btn theme-dark" @click="setTheme('theme-dark')">🌙 暗夜黑</button>
+                <button class="theme-btn theme-ocean" @click="setTheme('theme-ocean')">💙 海洋绿</button>
+                <button class="theme-btn theme-purple" @click="setTheme('theme-purple')">💜 梦幻紫</button>
+                <button class="theme-btn theme-sunset" @click="setTheme('theme-sunset')">🧡 日落橙</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 启动公告弹窗 -->
+    <div id="announcementModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <span>📢 公告</span>
+                <button class="modal-close" id="closeAnnouncementBtn">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <p style="font-size: 1.1rem;">✨ 此网页由 <strong>WangAnyi</strong> + <strong>DeepSeek</strong> 所编写 ✨</p>
+                <p style="margin-top: 16px;">
+                    <a href="https://github.com/Wang-Anyi/CloudMusicFree" target="_blank" rel="noopener noreferrer" style="display: inline-block; background: #2c2c2c; color: white; padding: 8px 20px; border-radius: 40px; text-decoration: none; font-weight: bold;">📂 GitHub 源码</a>
+                </p>
+            </div>
+            <div class="modal-footer" style="justify-content: center;">
+                <button id="confirmAnnouncementBtn" class="modal-btn confirm">开始体验</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIP 提示弹窗 -->
+    <div id="vipModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>⚠️ VIP 歌曲</span>
+                <button class="modal-close" id="closeModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>该歌曲为 VIP 会员专属，暂无法在本站播放。</p>
+                <p>请前往 <strong>网易云音乐</strong> 官方平台收听完整版。</p>
+            </div>
+            <div class="modal-footer">
+                <button id="modalCancelBtn" class="modal-btn cancel">返回</button>
+                <button id="modalConfirmBtn" class="modal-btn confirm">前往</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
