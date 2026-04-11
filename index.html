@@ -49,15 +49,19 @@
                     <span style="font-size:12px;">点击右侧▶️播放</span>
                 </div>
                 <div class="song-list" v-if="searchResults.length">
-                    <div class="song-item" v-for="song in searchResults" :key="song.id" @click="playSongById(song.id, song.name, song.artist, song.picUrl)">
+                    <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
                         <div class="song-info">
                             <img class="song-cover" :src="song.picUrl || 'https://picsum.photos/48/48?random=1'" alt="cover" @error="e => e.target.src='https://picsum.photos/48/48?grayscale'">
                             <div class="song-details">
-                                <div class="song-name">{{ song.name }} <span class="badge-free">免费</span></div>
+                                <div class="song-name">
+                                    {{ song.name }}
+                                    <span class="badge-free" v-if="!song.isVip">免费</span>
+                                    <span class="badge-vip" v-else>VIP</span>
+                                </div>
                                 <div class="song-artist">{{ song.artist }} · {{ formatDuration(song.duration) }}</div>
                             </div>
                         </div>
-                        <button class="play-btn-small" @click.stop="playSongById(song.id, song.name, song.artist, song.picUrl)">▶ 播放</button>
+                        <button class="play-btn-small" @click.stop="handlePlayClick(song)">▶ 播放</button>
                     </div>
                 </div>
                 <div v-else-if="loadingSearch" class="empty-tip">⏳ 搜索中，请稍候...</div>
@@ -121,7 +125,25 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 数据来自 Meting API · 仅供个人学习交流 · 支持正版音乐
+            🎧 数据来自自建 API · 仅供个人学习交流 · 支持正版音乐
+        </div>
+    </div>
+</div>
+
+<!-- VIP 提示弹窗 -->
+<div id="vipModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span>⚠️ VIP 歌曲</span>
+            <button class="modal-close" id="closeModalBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>该歌曲为 VIP 会员专属，暂无法在本站播放。</p>
+            <p>请前往 <strong>网易云音乐</strong> 官方平台收听完整版。</p>
+        </div>
+        <div class="modal-footer">
+            <button id="modalCancelBtn" class="modal-btn cancel">返回</button>
+            <button id="modalConfirmBtn" class="modal-btn confirm">前往</button>
         </div>
     </div>
 </div>
