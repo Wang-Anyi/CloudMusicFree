@@ -941,7 +941,7 @@ body {
     position: relative;
     padding: 24px 32px;
     box-shadow: 0 25px 50px rgba(0,0,0,0.5);
-    transform: translateY(-3%);
+    transform: translateY(-20%);
 }
 .close-fullscreen {
     position: absolute;
@@ -1051,7 +1051,7 @@ body {
 @media (max-width: 1024px) {
     .fullscreen-container {
         width: 85%;
-        height: 70%;
+        height: 52%;
         padding: 20px 24px;
     }
     .fullscreen-content {
@@ -1072,7 +1072,7 @@ body {
 @media (max-width: 768px) {
     .fullscreen-container {
         width: 92%;
-        height: 80%;
+        height: 60%;
         padding: 16px 20px;
         transform: translateY(0);
     }
