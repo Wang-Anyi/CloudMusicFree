@@ -58,7 +58,8 @@ createApp({
         const bgImageUrl = ref('');
         const blurEnabled = ref(false);
         const bgBlur = ref(0);
-        const cardOpacity = ref(100);  // 透明度百分比，默认 100%
+        const cardOpacity = ref(100);   // 卡片背景透明度百分比
+        const maskOpacity = ref(30);    // 卡片遮罩透明度百分比，默认30%
         
         // ---------- API 列表 ----------
         const API_LIST = [
@@ -944,6 +945,11 @@ createApp({
                 cardOpacity.value = parseInt(savedCardOpacity);
                 document.body.style.setProperty('--card-opacity', cardOpacity.value / 100);
             }
+            const savedMaskOpacity = localStorage.getItem('maskOpacity');
+            if (savedMaskOpacity !== null) {
+                maskOpacity.value = parseInt(savedMaskOpacity);
+                document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100);
+            }
         };
         
         const saveBgImage = () => {
@@ -991,6 +997,11 @@ createApp({
         const saveCardOpacity = () => {
             localStorage.setItem('cardOpacity', cardOpacity.value);
             document.body.style.setProperty('--card-opacity', cardOpacity.value / 100);
+        };
+        
+        const saveMaskOpacity = () => {
+            localStorage.setItem('maskOpacity', maskOpacity.value);
+            document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100);
         };
         
         const openSettingsModal = () => {
@@ -1078,8 +1089,8 @@ createApp({
             fullscreenTogglePlayPause, fullscreenSeek,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
-            bgImageUrl, blurEnabled, bgBlur, cardOpacity, bodyBackgroundStyle,
-            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity,
+            bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, bodyBackgroundStyle,
+            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveMaskOpacity,
             openSettingsModal, closeSettingsModal
         };
     }
