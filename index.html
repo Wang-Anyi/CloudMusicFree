@@ -4,12 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
-    <!-- 使用您自己放在 assets 文件夹下的 favicon.ico -->
     <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
     <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <!-- 添加 ID3 标签写入库，用于下载时嵌入封面图片 -->
     <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@4.4.0/dist/browser-id3-writer.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -34,6 +32,10 @@
                     <div class="id-parse-group">
                         <input type="text" class="small-input" v-model="songIdInput" placeholder="网易云歌曲ID 或 链接 (如 id=1869882)">
                         <button class="btn btn-outline" @click="parseById">🎧 解析播放</button>
+                    </div>
+                    <div class="id-parse-group" style="margin-top: 12px;">
+                        <input type="text" class="small-input" v-model="playlistUrlInput" placeholder="网易云歌单链接 或 ID (如 12390308466)">
+                        <button class="btn btn-outline" @click="loadCustomPlaylist">📋 加载歌单</button>
                     </div>
                 </div>
 
