@@ -4,10 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
-    <!-- 添加标签页图标（本地文件） -->
-    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
-    <!-- 如果使用 PNG 格式，type 改为 image/png -->
-    <!-- <link rel="icon" type="image/png" href="assets/logo.png"> -->
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <link rel="stylesheet" href="style.css">
@@ -59,7 +56,7 @@
                 <div class="song-list" v-if="searchResults.length">
                     <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
                         <div class="song-info">
-                            <img class="song-cover" :src="song.picUrl || 'https://picsum.photos/48/48?random=1'" alt="cover" @error="e => e.target.src='https://picsum.photos/48/48?grayscale'">
+                            <img class="song-cover" :src="song.picUrl" :data-id="song.id" @error="handleImageError($event, song.id)" alt="cover">
                             <div class="song-details">
                                 <div class="song-name">
                                     {{ song.name }}
@@ -84,7 +81,7 @@
                         <button class="fullscreen-btn" @click="openFullscreenPlayer">⛶</button>
                     </div>
                     <div class="now-playing">
-                        <img class="cover-large" :src="currentCover || 'https://picsum.photos/180/180?grayscale'" alt="album cover">
+                        <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover">
                         <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
                         <div class="player-controls">
                             <div class="progress-bar-container">
@@ -134,7 +131,7 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 10 个 API 自动故障转移 · 仅供学习交流
+            🎧 10 个 API 自动故障转移 · 图片失效自动修复
         </div>
     </div>
 
