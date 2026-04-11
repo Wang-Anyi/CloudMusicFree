@@ -1,5 +1,6 @@
 /* ========== 基础变量（默认暖色主题） ========== */
-:root {
+:root,
+.theme-default {
     --bg-gradient-start: #f9f3e6;
     --bg-gradient-end: #e8e0d5;
     --container-bg: rgba(255, 255, 255, 0.75);
