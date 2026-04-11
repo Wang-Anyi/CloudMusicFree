@@ -1,4 +1,4 @@
-const { createApp, ref, onMounted, nextTick } = Vue;
+const { createApp, ref, onMounted } = Vue;
 
 createApp({
     setup() {
@@ -18,7 +18,7 @@ createApp({
         const audioPlayer = ref(null);
         let currentAudioSrc = '';
         
-        // 增强控制
+        // 播放器控制
         const isPlaying = ref(false);
         const currentTime = ref(0);
         const duration = ref(0);
@@ -36,8 +36,8 @@ createApp({
         // 推荐歌单
         const recommendPlaylists = ref([]);
         
-        // API 基础地址 (Meting API，稳定支持跨域)
-        const API_BASE = 'https://api.i-meto.com/meting/api';
+        // 稳定的公共 API (Binaryify/NeteaseCloudMusicApi 官方演示实例)
+        const API_BASE = 'https://netease-cloud-music-api-five-roan-88.vercel.app';
         
         // ---------- 辅助函数 ----------
         const formatDuration = (ms) => {
@@ -64,7 +64,6 @@ createApp({
             return match2 ? match2[1] : null;
         };
         
-        // 添加播放历史
         const addToHistory = (id, name, artist, cover) => {
             const existing = playHistory.value.find(item => item.id === id);
             if (!existing) {
@@ -76,9 +75,9 @@ createApp({
         // ---------- 歌词解析 ----------
         const fetchLyrics = async (songId) => {
             try {
-                const res = await axios.get(`${API_BASE}?server=netease&type=lyric&id=${songId}`, { timeout: 8000 });
-                if (res.data && res.data.lyric) {
-                    const rawLyric = res.data.lyric;
+                const res = await axios.get(`${API_BASE}/lyric?id=${songId}`, { timeout: 8000 });
+                if (res.data && res.data.lrc && res.data.lrc.lyric) {
+                    const rawLyric = res.data.lrc.lyric;
                     const lines = rawLyric.split('\n');
                     const parsed = [];
                     const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
@@ -106,7 +105,6 @@ createApp({
             }
         };
         
-        // 更新歌词高亮
         const updateLyrics = (currentSec) => {
             if (!lyricsLines.value.length) return;
             let idx = -1;
@@ -133,10 +131,9 @@ createApp({
             loadingPlay.value = true;
             playErrorMsg.value = '';
             try {
-                // 获取歌曲播放地址
-                const urlRes = await axios.get(`${API_BASE}?server=netease&type=url&id=${songId}`, { timeout: 15000 });
-                if (urlRes.data && urlRes.data.url) {
-                    const musicUrl = urlRes.data.url;
+                const urlRes = await axios.get(`${API_BASE}/song/url?id=${songId}`, { timeout: 15000 });
+                if (urlRes.data && urlRes.data.data && urlRes.data.data[0] && urlRes.data.data[0].url) {
+                    const musicUrl = urlRes.data.data[0].url;
                     currentSongName.value = songName || '未知歌曲';
                     currentArtist.value = artistName || '网易云音乐';
                     currentCover.value = coverUrl || '';
@@ -150,7 +147,6 @@ createApp({
                         await audio.play();
                         isPlaying.value = true;
                     }
-                    // 加载歌词
                     fetchLyrics(songId);
                 } else {
                     throw new Error('未获取到播放地址，可能为VIP歌曲或版权限制');
@@ -170,14 +166,14 @@ createApp({
             loadingSearch.value = true;
             searchPerformed.value = true;
             try {
-                const res = await axios.get(`${API_BASE}?server=netease&type=search&keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 12000 });
-                if (res.data && res.data.length) {
-                    searchResults.value = res.data.map(item => ({
+                const res = await axios.get(`${API_BASE}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 12000 });
+                if (res.data && res.data.result && res.data.result.songs) {
+                    searchResults.value = res.data.result.songs.map(item => ({
                         id: String(item.id),
                         name: item.name,
-                        artist: item.artist,
+                        artist: item.artists.map(a => a.name).join('/'),
                         duration: item.duration,
-                        picUrl: item.picUrl || ''
+                        picUrl: item.album.picUrl || ''
                     }));
                 } else {
                     searchResults.value = [];
@@ -191,28 +187,26 @@ createApp({
             }
         };
         
-        // 通过ID解析播放
         const parseById = () => {
             const id = extractSongId(songIdInput.value);
             if (!id) return alert('请输入正确的歌曲ID或链接');
             playSongById(id, `歌曲ID:${id}`, '网易云音乐', '');
         };
         
-        // ---------- 热门歌单 (使用歌单ID列表) ----------
+        // ---------- 热门歌单 ----------
         const loadPlaylists = async () => {
-            // 网易云热门歌单ID（官方/高热度）
             const playlistIds = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
             const randomIds = playlistIds.sort(() => 0.5 - Math.random()).slice(0, 4);
             const plist = [];
             for (let pid of randomIds) {
                 try {
-                    const res = await axios.get(`${API_BASE}?server=netease&type=playlist&id=${pid}`, { timeout: 8000 });
-                    if (res.data && res.data.id) {
+                    const res = await axios.get(`${API_BASE}/playlist/detail?id=${pid}`, { timeout: 8000 });
+                    if (res.data && res.data.playlist) {
                         plist.push({
-                            id: res.data.id,
-                            name: res.data.name,
-                            coverImgUrl: res.data.coverImgUrl,
-                            trackCount: res.data.trackCount
+                            id: res.data.playlist.id,
+                            name: res.data.playlist.name,
+                            coverImgUrl: res.data.playlist.coverImgUrl,
+                            trackCount: res.data.playlist.trackCount
                         });
                     }
                 } catch(e) { console.warn(e); }
@@ -220,7 +214,6 @@ createApp({
             if (plist.length) {
                 recommendPlaylists.value = plist;
             } else {
-                // fallback 默认展示
                 recommendPlaylists.value = [
                     { id: '3778678', name: '热歌榜', coverImgUrl: 'https://picsum.photos/80/80?random=1', trackCount: 100 },
                     { id: '19723756', name: '欧美流行', coverImgUrl: 'https://picsum.photos/80/80?random=2', trackCount: 50 }
@@ -228,17 +221,16 @@ createApp({
             }
         };
         
-        // 获取歌单歌曲并展示到搜索结果
         const fetchPlaylistTracks = async (playlistId, plName) => {
             loadingSearch.value = true;
             try {
-                const res = await axios.get(`${API_BASE}?server=netease&type=playlist&id=${playlistId}`, { timeout: 10000 });
-                if (res.data && res.data.tracks) {
-                    const tracks = res.data.tracks.slice(0, 30);
+                const res = await axios.get(`${API_BASE}/playlist/track/all?id=${playlistId}&limit=30`, { timeout: 10000 });
+                if (res.data && res.data.songs) {
+                    const tracks = res.data.songs;
                     searchResults.value = tracks.map(track => ({
                         id: String(track.id),
                         name: track.name,
-                        artist: track.ar ? track.ar.map(a => a.name).join('/') : '未知',
+                        artist: track.ar.map(a => a.name).join('/'),
                         duration: track.dt,
                         picUrl: track.al?.picUrl || ''
                     }));
@@ -300,7 +292,6 @@ createApp({
         const onAudioEnded = () => { isPlaying.value = false; };
         const onAudioError = () => { playErrorMsg.value = '播放失败，可能是版权限制或链接过期'; isPlaying.value = false; };
         
-        // 初始化加载歌单
         onMounted(() => {
             loadPlaylists();
         });
