@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app" :class="{ 'dark-mode': isDarkMode }">
+<div id="app">
     <div class="app-container">
         <div class="header">
             <div class="header-left">
@@ -22,7 +22,6 @@
         </div>
 
         <div class="main-grid">
-            <!-- 左侧：搜索 + 歌单推荐 + 搜索结果 -->
             <div class="left-panel">
                 <div class="search-card">
                     <div class="search-box">
@@ -74,7 +73,6 @@
                 <div v-else class="empty-tip">✨ 试试搜索「周杰伦」或点击上方歌单</div>
             </div>
 
-            <!-- 右侧：播放器 + 歌词 + 最近播放 -->
             <div class="right-panel">
                 <div class="player-card">
                     <div class="player-header">
@@ -84,7 +82,6 @@
                     <div class="now-playing">
                         <img class="cover-large" :src="currentCover || 'https://picsum.photos/180/180?grayscale'" alt="album cover">
                         <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
-                        
                         <div class="player-controls">
                             <div class="progress-bar-container">
                                 <span class="time-current">{{ formatTime(currentTime) }}</span>
@@ -96,7 +93,6 @@
                                 <input type="range" v-model="volumeValue" @input="changeVolume" min="0" max="1" step="0.01">
                             </div>
                         </div>
-
                         <audio ref="audioPlayer" @timeupdate="updateProgress" @loadedmetadata="onLoadedMetadata" @ended="onAudioEnded" @error="onAudioError" style="display:none;"></audio>
                         <div class="audio-control-buttons">
                             <button class="ctrl-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️ 暂停' : '▶️ 播放' }}</button>
@@ -134,20 +130,17 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 数据来自自建 API · 仅供个人学习交流 · 支持正版音乐
+            🎧 10 个 API 自动故障转移 · 仅供学习交流
         </div>
     </div>
 
-    <!-- 全屏播放器模态框 -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
             <div class="fullscreen-content">
-                <!-- 左侧封面 -->
                 <div class="fullscreen-cover">
                     <img :src="fullscreenCover" alt="cover">
                 </div>
-                <!-- 右侧歌词 -->
                 <div class="fullscreen-lyrics">
                     <div class="fullscreen-lyrics-header">
                         <div class="fullscreen-song">{{ fullscreenSongName }}</div>
@@ -163,7 +156,6 @@
                     </div>
                 </div>
             </div>
-            <!-- 底部控制栏（增加音量控制） -->
             <div class="fullscreen-controls">
                 <div class="fullscreen-progress">
                     <span class="time-current">{{ formatTime(fullscreenCurrentTime) }}</span>
@@ -185,7 +177,6 @@
     </div>
 </div>
 
-<!-- VIP 提示弹窗 -->
 <div id="vipModal" class="modal" style="display: none;">
     <div class="modal-content">
         <div class="modal-header">
