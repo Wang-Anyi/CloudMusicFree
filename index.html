@@ -93,6 +93,7 @@
                         <div class="audio-control-buttons">
                             <button class="ctrl-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️ 暂停' : '▶️ 播放' }}</button>
                             <button class="ctrl-btn" @click="stopAudio">⏹️ 停止</button>
+                            <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                         </div>
                         <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
                         <div v-if="playErrorMsg" class="loading-tip" style="background:#ffdad2; color:#b13e1a;">{{ playErrorMsg }}</div>
