@@ -1,4 +1,4 @@
-const { createApp, ref, onMounted, nextTick } = Vue;
+const { createApp, ref, onMounted, nextTick, computed } = Vue;
 
 createApp({
     setup() {
@@ -35,7 +35,7 @@ createApp({
         let currentSongId = '';
         let currentSongArtist = '';
         
-        // 歌单切换相关
+        // 用于全屏播放器的歌单切换
         let currentPlaylistSongs = [];
         let currentPlaylistType = 'history';
         let currentPlaylistIndex = -1;
@@ -54,11 +54,11 @@ createApp({
         
         const currentTheme = ref('theme-default');
         
-        // 设置相关
-        const userCookie = ref('');
-        const showAdvancedSettings = ref(false);
-        const cookieStatus = ref('');
+        // 背景设置
+        const bgImageUrl = ref('');
+        const blurEnabled = ref(false);
         
+        // ---------- API 列表 ----------
         const API_LIST = [
             'https://meting-api-pi-one.vercel.app',
             'https://api-enhanced-delta-six.vercel.app',
@@ -143,7 +143,11 @@ createApp({
             console.log('[主题] 切换到:', themeName);
             currentTheme.value = themeName;
             localStorage.setItem('appTheme', themeName);
-            document.body.className = themeName;
+            document.body.className = currentTheme.value;
+            // 重新应用模糊效果（因为主题类改变后需要保持 blur-enabled）
+            if (blurEnabled.value) {
+                document.body.classList.add('blur-enabled');
+            }
             closeThemeModal();
         };
         
@@ -156,48 +160,6 @@ createApp({
             }
             document.body.className = currentTheme.value;
             console.log('[主题] 加载主题:', currentTheme.value);
-        };
-        
-        // ---------- 设置相关 ----------
-        const openSettingsModal = () => {
-            const modal = document.getElementById('settingsModal');
-            if (modal) modal.style.display = 'flex';
-        };
-        
-        const closeSettingsModal = () => {
-            const modal = document.getElementById('settingsModal');
-            if (modal) modal.style.display = 'none';
-        };
-        
-        const toggleAdvancedSettings = () => {
-            showAdvancedSettings.value = !showAdvancedSettings.value;
-        };
-        
-        const saveCookie = () => {
-            if (!userCookie.value.trim()) {
-                cookieStatus.value = '请输入 Cookie';
-                setTimeout(() => { if (cookieStatus.value === '请输入 Cookie') cookieStatus.value = ''; }, 3000);
-                return;
-            }
-            localStorage.setItem('netease_cookie', userCookie.value);
-            cookieStatus.value = 'Cookie 已保存，VIP 歌曲可播放';
-            setTimeout(() => { if (cookieStatus.value === 'Cookie 已保存，VIP 歌曲可播放') cookieStatus.value = ''; }, 3000);
-        };
-        
-        const clearCookie = () => {
-            localStorage.removeItem('netease_cookie');
-            userCookie.value = '';
-            cookieStatus.value = 'Cookie 已清除';
-            setTimeout(() => { if (cookieStatus.value === 'Cookie 已清除') cookieStatus.value = ''; }, 2000);
-        };
-        
-        const loadCookie = () => {
-            const saved = localStorage.getItem('netease_cookie');
-            if (saved) {
-                userCookie.value = saved;
-                cookieStatus.value = '已加载保存的 Cookie';
-                setTimeout(() => { if (cookieStatus.value === '已加载保存的 Cookie') cookieStatus.value = ''; }, 2000);
-            }
         };
         
         // ---------- 歌词滚动 ----------
@@ -426,17 +388,13 @@ createApp({
             loadingSearch.value = false;
         };
         
-        // ---------- 获取播放地址（自动添加 Cookie）----------
+        // ---------- 播放地址获取 ----------
         const getSongUrl = async (songId) => {
-            const savedCookie = localStorage.getItem('netease_cookie');
             const maxRetries = API_LIST.length;
             for (let i = 0; i < maxRetries; i++) {
                 const apiIndex = (currentApiIndex + i) % maxRetries;
                 const apiBase = API_LIST[apiIndex];
-                let url = `${apiBase}/song/url?id=${songId}`;
-                if (savedCookie) {
-                    url += `&cookie=${encodeURIComponent(savedCookie)}`;
-                }
+                const url = `${apiBase}/song/url?id=${songId}`;
                 try {
                     const res = await axios.get(url, { timeout: 15000 });
                     let musicUrl = null;
@@ -461,17 +419,13 @@ createApp({
             throw new Error('无法获取播放地址');
         };
         
-        // ---------- 获取歌曲详情 ----------
+        // ---------- 歌曲详情 ----------
         const getSongDetail = async (songId) => {
-            const savedCookie = localStorage.getItem('netease_cookie');
             const maxRetries = API_LIST.length;
             for (let i = 0; i < maxRetries; i++) {
                 const apiIndex = (currentApiIndex + i) % maxRetries;
                 const apiBase = API_LIST[apiIndex];
-                let url = `${apiBase}/song/detail?ids=${songId}`;
-                if (savedCookie) {
-                    url += `&cookie=${encodeURIComponent(savedCookie)}`;
-                }
+                const url = `${apiBase}/song/detail?ids=${songId}`;
                 try {
                     const res = await axios.get(url, { timeout: 8000 });
                     let songDetail = null;
@@ -946,6 +900,76 @@ createApp({
             }
         };
         
+        // ---------- 背景设置 ----------
+        const bodyBackgroundStyle = computed(() => {
+            if (bgImageUrl.value && bgImageUrl.value.trim()) {
+                return {
+                    backgroundImage: `url(${bgImageUrl.value})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center center',
+                    backgroundAttachment: 'fixed',
+                    backgroundRepeat: 'no-repeat'
+                };
+            }
+            return {};
+        });
+        
+        const loadBgSettings = () => {
+            const savedBg = localStorage.getItem('customBgImage');
+            if (savedBg) {
+                bgImageUrl.value = savedBg;
+                document.body.classList.add('custom-bg');
+            }
+            const savedBlur = localStorage.getItem('blurEnabled');
+            if (savedBlur !== null) {
+                blurEnabled.value = savedBlur === 'true';
+                if (blurEnabled.value) {
+                    document.body.classList.add('blur-enabled');
+                } else {
+                    document.body.classList.remove('blur-enabled');
+                }
+            }
+        };
+        
+        const saveBgImage = () => {
+            if (!bgImageUrl.value.trim()) {
+                playErrorMsg.value = '请输入图片URL';
+                setTimeout(() => { if (playErrorMsg.value === '请输入图片URL') playErrorMsg.value = ''; }, 2000);
+                return;
+            }
+            localStorage.setItem('customBgImage', bgImageUrl.value);
+            document.body.classList.add('custom-bg');
+            playErrorMsg.value = '✅ 背景已更新';
+            setTimeout(() => { if (playErrorMsg.value === '✅ 背景已更新') playErrorMsg.value = ''; }, 2000);
+        };
+        
+        const resetBgImage = () => {
+            bgImageUrl.value = '';
+            localStorage.removeItem('customBgImage');
+            document.body.classList.remove('custom-bg');
+            playErrorMsg.value = '✅ 已恢复默认背景';
+            setTimeout(() => { if (playErrorMsg.value === '✅ 已恢复默认背景') playErrorMsg.value = ''; }, 2000);
+        };
+        
+        const saveBlurEnabled = () => {
+            localStorage.setItem('blurEnabled', blurEnabled.value);
+            if (blurEnabled.value) {
+                document.body.classList.add('blur-enabled');
+            } else {
+                document.body.classList.remove('blur-enabled');
+            }
+        };
+        
+        const openSettingsModal = () => {
+            const modal = document.getElementById('settingsModal');
+            if (modal) modal.style.display = 'flex';
+        };
+        
+        const closeSettingsModal = () => {
+            const modal = document.getElementById('settingsModal');
+            if (modal) modal.style.display = 'none';
+        };
+        
         // ---------- 空格键控制 ----------
         const handleKeydown = (event) => {
             const target = event.target;
@@ -987,15 +1011,13 @@ createApp({
         onMounted(() => {
             loadTheme();
             loadPlaylists();
-            loadCookie();  // 加载保存的 Cookie
+            loadBgSettings();
             nextTick(() => {
                 initModalEvents();
                 const fsModal = document.getElementById('fullscreenPlayer');
                 if (fsModal) fsModal.style.display = 'none';
                 const themeModal = document.getElementById('themeModal');
                 if (themeModal) themeModal.style.display = 'none';
-                const settingsModal = document.getElementById('settingsModal');
-                if (settingsModal) settingsModal.style.display = 'none';
                 showAnnouncement();
             });
             window.addEventListener('keydown', handleKeydown);
@@ -1017,9 +1039,8 @@ createApp({
             fullscreenTogglePlayPause, fullscreenSeek,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
-            // 设置相关
-            userCookie, showAdvancedSettings, cookieStatus,
-            openSettingsModal, closeSettingsModal, toggleAdvancedSettings, saveCookie, clearCookie
+            bgImageUrl, blurEnabled, bodyBackgroundStyle, saveBgImage, resetBgImage, saveBlurEnabled,
+            openSettingsModal, closeSettingsModal
         };
     }
 }).mount('#app');
