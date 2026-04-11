@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
-    <!-- 使用稳定的 favicon（音乐图标） -->
-    <link rel="icon" type="image/x-icon" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f3b5.svg">
+    <!-- 使用您自己放在 assets 文件夹下的 favicon.ico -->
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+    <!-- 备用图标（如果上面的加载失败） -->
     <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -56,7 +57,7 @@
                 <div class="song-list" v-if="searchResults.length">
                     <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
                         <div class="song-info">
-                            <img class="song-cover" :src="song.picUrl" @error="handleImageError($event)" alt="cover">
+                            <img class="song-cover" :src="song.picUrl" :data-id="song.id" @error="handleImageError($event, song.id)" alt="cover">
                             <div class="song-details">
                                 <div class="song-name">
                                     {{ song.name }}
