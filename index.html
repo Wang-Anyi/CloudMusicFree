@@ -56,7 +56,7 @@
                 <div class="song-list" v-if="searchResults.length">
                     <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
                         <div class="song-info">
-                            <img class="song-cover" :src="song.picUrl" :data-id="song.id" @error="handleImageError($event, song.id)" alt="cover">
+                            <img class="song-cover" :src="song.picUrl" @error="handleImageError($event)" alt="cover">
                             <div class="song-details">
                                 <div class="song-name">
                                     {{ song.name }}
@@ -69,7 +69,7 @@
                         <button class="play-btn-small" @click.stop="handlePlayClick(song)">▶ 播放</button>
                     </div>
                 </div>
-                <div v-else-if="loadingSearch" class="empty-tip">⏳ 搜索中，请稍候...</div>
+                <div v-else-if="loadingSearch" class="empty-tip">⏳ 正在搜索，请稍候...</div>
                 <div v-else-if="!loadingSearch && searchPerformed && searchResults.length===0" class="empty-tip">😔 没有找到相关歌曲，换个关键词试试~</div>
                 <div v-else class="empty-tip">✨ 试试搜索「周杰伦」或点击上方歌单</div>
             </div>
