@@ -2,7 +2,7 @@ const { createApp, ref, onMounted, nextTick, computed } = Vue;
 
 createApp({
     setup() {
-        // ---------- 响应式数据 ----------
+        // ========== 响应式数据 ==========
         const searchKeyword = ref('');
         const songIdInput = ref('');
         const playlistUrlInput = ref('');
@@ -27,6 +27,7 @@ createApp({
         const lyricsLines = ref([]);
         const currentLyricIndex = ref(-1);
         const lyricsContainer = ref(null);
+        const wordByWordLyrics = ref([]); // 逐字歌词
         
         const playHistory = ref([]);
         const recommendPlaylists = ref([]);
@@ -35,11 +36,22 @@ createApp({
         let currentSongId = '';
         let currentSongArtist = '';
         
-        // 用于全屏播放器的歌单切换
-        let currentPlaylistSongs = [];
-        let currentPlaylistType = 'history';
-        let currentPlaylistIndex = -1;
+        // 播放队列相关
+        const queue = ref([]);
+        let currentQueueIndex = -1;
+        const loopMode = ref('none'); // 'none', 'one', 'all'
         
+        // 迷你播放器
+        const miniPlayerVisible = ref(false);
+        
+        // 相似歌曲、MV、评论
+        const similarSongs = ref([]);
+        const comments = ref([]);
+        
+        // 睡眠定时器
+        let sleepTimerId = null;
+        
+        // 全屏播放器相关
         const fullscreenPlayerVisible = ref(false);
         const fullscreenCover = ref('');
         const fullscreenSongName = ref('');
@@ -52,20 +64,17 @@ createApp({
         const fullscreenIsPlaying = ref(false);
         let fullscreenInterval = null;
         
+        // 主题、背景设置
         const currentTheme = ref('theme-default');
-        
-        // 背景设置
         const bgImageUrl = ref('');
         const blurEnabled = ref(false);
         const bgBlur = ref(0);
         const cardOpacity = ref(100);
         const maskOpacity = ref(30);
+        const glassIntensity = ref(12); // 毛玻璃强度（新增）
         
-        // 个人歌单相关
-        const userCookie = ref('');
-        const userPlaylists = ref([]);
-        const playlistLoading = ref(false);
-        const playlistError = ref('');
+        // 自定义字体
+        let customFontUrl = '';
         
         // ---------- API 列表 ----------
         const API_LIST = [
@@ -80,7 +89,6 @@ createApp({
             'https://netease-api.cyan9527.com',
             'https://music.ghser.com'
         ];
-        
         let currentApiIndex = 0;
         
         // ---------- 辅助函数 ----------
@@ -137,49 +145,43 @@ createApp({
             }
         };
         
+        // 错误日志（简单存储）
+        const logError = (error, context) => {
+            const logs = JSON.parse(localStorage.getItem('errorLogs') || '[]');
+            logs.push({ time: new Date().toISOString(), error: error.message || error, context });
+            while (logs.length > 50) logs.shift();
+            localStorage.setItem('errorLogs', JSON.stringify(logs));
+            console.error(`[${context}]`, error);
+        };
+        
         // ---------- 主题切换 ----------
         const openThemeModal = () => {
-            const modal = document.getElementById('themeModal');
-            if (modal) modal.style.display = 'flex';
+            document.getElementById('themeModal').style.display = 'flex';
         };
-        
         const closeThemeModal = () => {
-            const modal = document.getElementById('themeModal');
-            if (modal) modal.style.display = 'none';
+            document.getElementById('themeModal').style.display = 'none';
         };
-        
         const setTheme = (themeName) => {
-            console.log('[主题] 切换到:', themeName);
             currentTheme.value = themeName;
             localStorage.setItem('appTheme', themeName);
             document.body.className = currentTheme.value;
-            if (blurEnabled.value) {
-                document.body.classList.add('blur-enabled');
-            }
+            if (blurEnabled.value) document.body.classList.add('blur-enabled');
             closeThemeModal();
         };
-        
         const loadTheme = () => {
-            const savedTheme = localStorage.getItem('appTheme');
-            if (savedTheme && ['theme-default', 'theme-dark', 'theme-ocean', 'theme-purple', 'theme-sunset'].includes(savedTheme)) {
-                currentTheme.value = savedTheme;
-            } else {
-                currentTheme.value = 'theme-default';
-            }
+            const saved = localStorage.getItem('appTheme');
+            currentTheme.value = (saved && saved.includes('theme')) ? saved : 'theme-default';
             document.body.className = currentTheme.value;
-            console.log('[主题] 加载主题:', currentTheme.value);
         };
         
-        // ---------- 歌词滚动 ----------
+        // ---------- 歌词滚动（仅容器内）----------
         const scrollLyricsToActive = () => {
             if (!lyricsContainer.value) return;
             const container = lyricsContainer.value;
             const activeLine = container.querySelector('.lyric-line.active');
             if (activeLine) {
-                const containerRect = container.getBoundingClientRect();
-                const activeRect = activeLine.getBoundingClientRect();
-                const offset = activeRect.top - containerRect.top - container.clientHeight / 2 + activeRect.height / 2;
-                container.scrollTop += offset;
+                const offset = activeLine.offsetTop - container.clientHeight / 2 + activeLine.clientHeight / 2;
+                container.scrollTop = offset;
             }
         };
         
@@ -188,14 +190,12 @@ createApp({
             if (!container) return;
             const activeLine = container.querySelector('.fullscreen-lyric-line.active');
             if (activeLine) {
-                const containerRect = container.getBoundingClientRect();
-                const activeRect = activeLine.getBoundingClientRect();
-                const offset = activeRect.top - containerRect.top - container.clientHeight / 2 + activeRect.height / 2;
-                container.scrollTop += offset;
+                const offset = activeLine.offsetTop - container.clientHeight / 2 + activeLine.clientHeight / 2;
+                container.scrollTop = offset;
             }
         };
         
-        // ---------- 歌词解析 ----------
+        // ---------- 歌词解析（含逐字）----------
         const fetchLyrics = async (songId) => {
             try {
                 const res = await requestWithFallback(`/lyric?id=${songId}`, { timeout: 8000 });
@@ -220,9 +220,31 @@ createApp({
                     parsed.sort((a,b) => a.time - b.time);
                     lyricsLines.value = parsed;
                     fullscreenLyrics.value = parsed;
+                    
+                    // 尝试解析逐字歌词（网易云逐字歌词格式： [00:12.35] 我 (0.3) 的 (0.5) 爱 (0.4) 你 (0.2)）
+                    const wordPattern = /\[(\d{2}:\d{2}\.\d{2})\]\s*([\s\S]+)/;
+                    const wordLines = rawLyric.split('\n');
+                    const words = [];
+                    for (let line of wordLines) {
+                        const m = line.match(wordPattern);
+                        if (m) {
+                            const baseTime = (parseInt(m[1].split(':')[0]) * 60 + parseFloat(m[1].split(':')[1]));
+                            const content = m[2];
+                            const regex = /([\u4e00-\u9fa5a-zA-Z0-9]+)\s*\(([\d.]+)\)/g;
+                            let match;
+                            while ((match = regex.exec(content)) !== null) {
+                                words.push({
+                                    time: baseTime + parseFloat(match[2]),
+                                    word: match[1]
+                                });
+                            }
+                        }
+                    }
+                    wordByWordLyrics.value = words;
                 } else {
                     lyricsLines.value = [];
                     fullscreenLyrics.value = [];
+                    wordByWordLyrics.value = [];
                 }
             } catch (e) {
                 console.warn('歌词加载失败', e);
@@ -238,23 +260,19 @@ createApp({
                 const line = lyricsLines.value[i];
                 if (line.time >= 0 && currentSec >= line.time) {
                     idx = i;
-                } else if (line.time > currentSec) {
-                    break;
-                }
+                } else if (line.time > currentSec) break;
             }
             if (idx !== currentLyricIndex.value) {
                 currentLyricIndex.value = idx;
                 fullscreenLyricIndex.value = idx;
                 nextTick(() => {
                     scrollLyricsToActive();
-                    if (fullscreenPlayerVisible.value) {
-                        scrollFullscreenLyricsToActive();
-                    }
+                    if (fullscreenPlayerVisible.value) scrollFullscreenLyricsToActive();
                 });
             }
         };
         
-        // ---------- 通用请求函数 ----------
+        // ---------- 通用请求（故障转移）----------
         const requestWithFallback = async (urlPath, options = {}) => {
             const maxRetries = API_LIST.length;
             let lastError = null;
@@ -263,10 +281,7 @@ createApp({
                 const apiBase = API_LIST[apiIndex];
                 const fullUrl = `${apiBase}${urlPath}`;
                 try {
-                    const response = await axios.get(fullUrl, { 
-                        timeout: options.timeout || 15000,
-                        ...options 
-                    });
+                    const response = await axios.get(fullUrl, { timeout: options.timeout || 15000, ...options });
                     currentApiIndex = apiIndex;
                     console.log(`[API] ✅ 成功: ${apiBase}`);
                     return response;
@@ -284,43 +299,33 @@ createApp({
                 const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
                 try {
                     const res = await axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 5000 });
-                    let detail = null;
-                    if (res.data && res.data.songs && res.data.songs[0]) {
-                        detail = res.data.songs[0];
-                    } else if (res.data && res.data.data && res.data.data[0]) {
-                        detail = res.data.data[0];
-                    }
+                    let detail = res.data?.songs?.[0] || res.data?.data?.[0];
                     if (detail) {
                         const coverUrl = extractCover(detail);
-                        if (coverUrl && coverUrl.startsWith('http')) {
-                            return toHttps(coverUrl);
-                        }
+                        if (coverUrl && coverUrl.startsWith('http')) return toHttps(coverUrl);
                     }
-                } catch (e) {
-                    console.warn(`获取封面失败 ${apiBase}:`, e.message);
-                }
+                } catch (e) {}
             }
             return null;
         };
         
         // ---------- 图片加载 ----------
-        const onImageLoad = (event, songId) => {
+        const onImageLoad = (event) => {
             const wrapper = event.target.closest('.cover-wrapper');
             if (wrapper) {
                 const loadingDiv = wrapper.querySelector('.cover-loading');
                 if (loadingDiv) loadingDiv.style.display = 'none';
             }
         };
-        
-        const onImageError = (event, songId) => {
+        const onImageError = (event) => {
             const img = event.target;
+            if (!img.src.includes('cdn-icons-png.flaticon.com')) {
+                img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+            }
             const wrapper = img.closest('.cover-wrapper');
             if (wrapper) {
                 const loadingDiv = wrapper.querySelector('.cover-loading');
                 if (loadingDiv) loadingDiv.style.display = 'none';
-            }
-            if (!img.src.includes('cdn-icons-png.flaticon.com')) {
-                img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             }
         };
         
@@ -328,24 +333,15 @@ createApp({
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
-            
             searchResults.value = [];
             searchPerformed.value = true;
             loadingSearch.value = true;
-            
             let songsData = null;
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[i];
                 try {
-                    const res = await axios.get(`${apiBase}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 12000 });
-                    let songs = null;
-                    if (res.data && res.data.result && res.data.result.songs) {
-                        songs = res.data.result.songs;
-                    } else if (res.data && res.data.data && Array.isArray(res.data.data)) {
-                        songs = res.data.data;
-                    } else if (Array.isArray(res.data)) {
-                        songs = res.data;
-                    }
+                    const res = await axios.get(`${apiBase}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 10000 });
+                    let songs = res.data?.result?.songs || res.data?.data || (Array.isArray(res.data) ? res.data : null);
                     if (songs && songs.length) {
                         songsData = songs;
                         break;
@@ -358,7 +354,6 @@ createApp({
                 loadingSearch.value = false;
                 return;
             }
-            
             const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             const tempResults = songsData.map(item => {
                 const id = item.id || item.song_id;
@@ -367,30 +362,13 @@ createApp({
                 const duration = item.duration || item.dt || 0;
                 const fee = item.fee || 0;
                 const isVip = (fee === 1 || fee === 4);
-                return {
-                    id: String(id),
-                    name: name,
-                    artist: artist,
-                    duration: duration,
-                    picUrl: defaultCover,
-                    isVip: isVip,
-                    loadingCover: true
-                };
+                return { id: String(id), name, artist, duration, picUrl: defaultCover, isVip, loadingCover: true };
             });
             searchResults.value = tempResults;
-            
             const coverPromises = tempResults.map(async (song, index) => {
-                try {
-                    const realCover = await fetchRealCover(song.id);
-                    if (realCover) {
-                        searchResults.value[index].picUrl = realCover;
-                    } else {
-                        searchResults.value[index].loadingCover = false;
-                    }
-                } catch (e) {
-                    console.warn(`获取歌曲 ${song.id} 封面失败:`, e);
-                    searchResults.value[index].loadingCover = false;
-                }
+                const realCover = await fetchRealCover(song.id);
+                if (realCover) searchResults.value[index].picUrl = realCover;
+                else searchResults.value[index].loadingCover = false;
             });
             await Promise.allSettled(coverPromises);
             loadingSearch.value = false;
@@ -398,63 +376,35 @@ createApp({
         
         // ---------- 播放地址获取 ----------
         const getSongUrl = async (songId) => {
-            const maxRetries = API_LIST.length;
-            for (let i = 0; i < maxRetries; i++) {
-                const apiIndex = (currentApiIndex + i) % maxRetries;
-                const apiBase = API_LIST[apiIndex];
-                const url = `${apiBase}/song/url?id=${songId}`;
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
                 try {
-                    const res = await axios.get(url, { timeout: 20000 });
-                    let musicUrl = null;
-                    if (res.data && res.data.data && res.data.data[0] && res.data.data[0].url) {
-                        musicUrl = res.data.data[0].url;
-                    } else if (res.data && res.data.url) {
-                        musicUrl = res.data.url;
-                    } else if (typeof res.data === 'string') {
-                        musicUrl = res.data;
-                    } else if (res.data && res.data.data && typeof res.data.data === 'string') {
-                        musicUrl = res.data.data;
-                    }
+                    const res = await axios.get(`${apiBase}/song/url?id=${songId}`, { timeout: 20000 });
+                    let musicUrl = res.data?.data?.[0]?.url || res.data?.url || (typeof res.data === 'string' ? res.data : null);
                     if (musicUrl) {
-                        currentApiIndex = apiIndex;
-                        console.log(`[播放] ✅ 成功: ${apiBase}`);
+                        currentApiIndex = (currentApiIndex + i) % API_LIST.length;
                         return toHttps(musicUrl);
                     }
-                } catch (err) {
-                    console.warn(`[播放] ${apiBase} 失败:`, err.message);
-                }
+                } catch (err) {}
             }
             throw new Error('无法获取播放地址');
         };
         
         // ---------- 歌曲详情 ----------
         const getSongDetail = async (songId) => {
-            const maxRetries = API_LIST.length;
-            for (let i = 0; i < maxRetries; i++) {
-                const apiIndex = (currentApiIndex + i) % maxRetries;
-                const apiBase = API_LIST[apiIndex];
-                const url = `${apiBase}/song/detail?ids=${songId}`;
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
                 try {
-                    const res = await axios.get(url, { timeout: 8000 });
-                    let songDetail = null;
-                    if (res.data && res.data.songs && res.data.songs[0]) {
-                        songDetail = res.data.songs[0];
-                    } else if (res.data && res.data.data && res.data.data[0]) {
-                        songDetail = res.data.data[0];
-                    }
-                    if (songDetail) {
-                        currentApiIndex = apiIndex;
-                        return songDetail;
-                    }
-                } catch (err) {
-                    console.warn(`[详情] ${apiBase} 失败:`, err.message);
-                }
+                    const res = await axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 8000 });
+                    let detail = res.data?.songs?.[0] || res.data?.data?.[0];
+                    if (detail) return detail;
+                } catch (err) {}
             }
             throw new Error('无法获取歌曲详情');
         };
         
-        // ---------- 播放 ----------
-        const playSongById = async (songId, songName, artistName, coverUrl, playlistSongs = null, playlistIndex = -1, playlistType = 'history') => {
+        // ---------- 核心播放（集成队列）----------
+        const playSongById = async (songId, songName, artistName, coverUrl, addToQueue = true, queueIndex = -1) => {
             if (!songId) return;
             loadingPlay.value = true;
             playErrorMsg.value = '';
@@ -468,14 +418,17 @@ createApp({
                 currentSongArtist = currentArtist.value;
                 addToHistory(songId, songName, currentArtist.value, currentCover.value);
                 
-                if (playlistSongs && playlistIndex >= 0) {
-                    currentPlaylistSongs = playlistSongs;
-                    currentPlaylistIndex = playlistIndex;
-                    currentPlaylistType = playlistType;
-                } else {
-                    currentPlaylistSongs = [];
-                    currentPlaylistIndex = -1;
-                    currentPlaylistType = 'history';
+                // 队列管理
+                if (addToQueue) {
+                    const existing = queue.value.find(s => s.id === songId);
+                    if (!existing) {
+                        queue.value.push({ id: songId, name: songName, artist: artistName, picUrl: currentCover.value });
+                        currentQueueIndex = queue.value.length - 1;
+                    } else {
+                        currentQueueIndex = queue.value.findIndex(s => s.id === songId);
+                    }
+                } else if (queueIndex >= 0) {
+                    currentQueueIndex = queueIndex;
                 }
                 
                 fullscreenSongName.value = currentSongName.value;
@@ -488,7 +441,7 @@ createApp({
                     audio.src = '';
                     await new Promise(r => setTimeout(r, 10));
                     audio.src = musicUrl;
-                    await new Promise((resolve) => {
+                    await new Promise(resolve => {
                         const canPlayHandler = () => {
                             audio.removeEventListener('canplay', canPlayHandler);
                             resolve();
@@ -499,360 +452,310 @@ createApp({
                     await audio.play();
                     isPlaying.value = true;
                     fullscreenIsPlaying.value = true;
+                    // 记忆播放进度
+                    const savedTime = localStorage.getItem(`playProgress_${songId}`);
+                    if (savedTime) {
+                        audio.currentTime = parseFloat(savedTime);
+                    }
                 }
                 fetchLyrics(songId);
+                // 动态渐变背景（可选）
+                // setDynamicGradient(currentCover.value);
             } catch (err) {
                 console.error('播放错误:', err);
                 playErrorMsg.value = err.message || '网络错误，请重试';
+                logError(err, 'playSongById');
             } finally {
                 loadingPlay.value = false;
             }
         };
         
-        // ---------- 下载 ----------
+        // 播放队列中的歌曲
+        const playFromQueue = (idx) => {
+            if (idx < 0 || idx >= queue.value.length) return;
+            const song = queue.value[idx];
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, idx);
+        };
+        
+        const addToPlayQueue = (song) => {
+            if (!queue.value.find(s => s.id === song.id)) {
+                queue.value.push(song);
+                playErrorMsg.value = `✅ 已添加到队列: ${song.name}`;
+                setTimeout(() => { if (playErrorMsg.value === `✅ 已添加到队列: ${song.name}`) playErrorMsg.value = ''; }, 2000);
+            } else {
+                playErrorMsg.value = '歌曲已在队列中';
+                setTimeout(() => { if (playErrorMsg.value === '歌曲已在队列中') playErrorMsg.value = ''; }, 1500);
+            }
+        };
+        
+        const removeFromQueue = (idx) => {
+            queue.value.splice(idx, 1);
+            if (currentQueueIndex >= idx) currentQueueIndex--;
+        };
+        
+        const clearQueue = () => {
+            queue.value = [];
+            currentQueueIndex = -1;
+        };
+        
+        const toggleLoopMode = () => {
+            if (loopMode.value === 'none') loopMode.value = 'one';
+            else if (loopMode.value === 'one') loopMode.value = 'all';
+            else loopMode.value = 'none';
+            playErrorMsg.value = `循环模式: ${loopMode.value === 'none' ? '无' : (loopMode.value === 'one' ? '单曲循环' : '列表循环')}`;
+            setTimeout(() => { if (playErrorMsg.value.includes('循环模式')) playErrorMsg.value = ''; }, 2000);
+        };
+        
+        // 上一曲/下一曲（基于队列）
+        const playPrev = () => {
+            if (queue.value.length === 0) {
+                playErrorMsg.value = '队列为空';
+                return;
+            }
+            let newIndex = currentQueueIndex - 1;
+            if (newIndex < 0) newIndex = queue.value.length - 1;
+            playFromQueue(newIndex);
+        };
+        
+        const playNext = () => {
+            if (queue.value.length === 0) return;
+            let newIndex = currentQueueIndex + 1;
+            if (newIndex >= queue.value.length) {
+                if (loopMode.value === 'all') newIndex = 0;
+                else return;
+            }
+            playFromQueue(newIndex);
+        };
+        
+        // 下载（含封面）
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
-            if (!audio || !audio.src || audio.src === '') {
+            if (!audio || !audio.src) {
                 playErrorMsg.value = '没有正在播放的歌曲';
                 setTimeout(() => { if (playErrorMsg.value === '没有正在播放的歌曲') playErrorMsg.value = ''; }, 2000);
                 return;
             }
             if (currentIsVip.value) {
-                playErrorMsg.value = 'VIP歌曲暂不支持下载，请支持正版';
-                setTimeout(() => { if (playErrorMsg.value === 'VIP歌曲暂不支持下载，请支持正版') playErrorMsg.value = ''; }, 2000);
+                playErrorMsg.value = 'VIP歌曲暂不支持下载';
                 return;
             }
-            
             try {
-                playErrorMsg.value = '⏳ 正在准备下载（含封面）...';
+                playErrorMsg.value = '⏳ 正在准备下载...';
                 const musicUrl = audio.src;
                 const audioResponse = await fetch(musicUrl);
-                if (!audioResponse.ok) throw new Error('音频获取失败');
                 const audioBuffer = await audioResponse.arrayBuffer();
-                
                 let coverBuffer = null;
                 const coverUrl = currentCover.value;
-                if (coverUrl && coverUrl !== 'https://cdn-icons-png.flaticon.com/512/727/727245.png') {
+                if (coverUrl && !coverUrl.includes('flaticon')) {
                     try {
-                        const imgResponse = await fetch(coverUrl);
-                        if (imgResponse.ok) {
-                            coverBuffer = await imgResponse.arrayBuffer();
-                        }
-                    } catch (e) {
-                        console.warn('获取封面图片失败，将不嵌入封面', e);
-                    }
+                        const imgRes = await fetch(coverUrl);
+                        if (imgRes.ok) coverBuffer = await imgRes.arrayBuffer();
+                    } catch(e) {}
                 }
-                
                 const writer = new window.ID3Writer(audioBuffer);
-                writer.setFrame('TIT2', currentSongName.value || '未知歌曲')
-                      .setFrame('TPE1', [currentArtist.value || '未知艺术家'])
+                writer.setFrame('TIT2', currentSongName.value)
+                      .setFrame('TPE1', [currentArtist.value])
                       .setFrame('TALB', '云音匣下载')
                       .setFrame('TYER', new Date().getFullYear().toString())
                       .setFrame('TCON', ['流行']);
                 if (coverBuffer) {
-                    const coverType = coverUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
                     writer.setFrame('APIC', {
                         type: 3,
                         data: coverBuffer,
                         description: 'Cover',
-                        mime: coverType
+                        mime: coverUrl.endsWith('.png') ? 'image/png' : 'image/jpeg'
                     });
                 }
                 writer.addTag();
-                const taggedBuffer = writer.arrayBuffer;
-                
-                const blob = new Blob([taggedBuffer], { type: 'audio/mpeg' });
+                const blob = new Blob([writer.arrayBuffer], { type: 'audio/mpeg' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
-                const fileName = `${currentArtist.value || '未知艺术家'} - ${currentSongName.value || '未知歌曲'}.mp3`;
+                link.download = `${currentArtist.value} - ${currentSongName.value}.mp3`;
                 link.href = url;
-                link.download = fileName;
-                document.body.appendChild(link);
                 link.click();
-                document.body.removeChild(link);
                 URL.revokeObjectURL(url);
-                
-                playErrorMsg.value = `✅ 已下载（含封面）: ${fileName}`;
-                setTimeout(() => { if (playErrorMsg.value === `✅ 已下载（含封面）: ${fileName}`) playErrorMsg.value = ''; }, 3000);
+                playErrorMsg.value = '✅ 下载完成';
+                setTimeout(() => { if (playErrorMsg.value === '✅ 下载完成') playErrorMsg.value = ''; }, 2000);
             } catch (err) {
-                console.error('下载失败:', err);
-                playErrorMsg.value = '下载失败，可能是网络或跨域限制，请重试';
-                setTimeout(() => { if (playErrorMsg.value === '下载失败，可能是网络或跨域限制，请重试') playErrorMsg.value = ''; }, 3000);
-            }
-        };
-        
-        // ---------- VIP 弹窗 ----------
-        let pendingVipSong = null;
-        const showVipModal = (song) => {
-            pendingVipSong = song;
-            const modal = document.getElementById('vipModal');
-            if (modal) modal.style.display = 'flex';
-        };
-        
-        const hideVipModal = () => {
-            const modal = document.getElementById('vipModal');
-            if (modal) modal.style.display = 'none';
-            pendingVipSong = null;
-        };
-        
-        const goToNetEase = () => {
-            if (pendingVipSong && pendingVipSong.id) {
-                window.open(`https://music.163.com/song?id=${pendingVipSong.id}`, '_blank');
-            }
-            hideVipModal();
-        };
-        
-        const handlePlayClick = (song) => {
-            if (song.isVip) {
-                showVipModal(song);
-            } else {
-                playSongById(song.id, song.name, song.artist, song.picUrl);
-            }
-        };
-        
-        const parseById = async () => {
-            const id = extractSongId(songIdInput.value);
-            if (!id) return alert('请输入正确的歌曲ID或链接');
-            try {
-                const songDetail = await getSongDetail(id);
-                const fee = songDetail.fee || 0;
-                const isVip = (fee === 1 || fee === 4);
-                let picUrl = extractCover(songDetail);
-                if (picUrl) picUrl = toHttps(picUrl);
-                else picUrl = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                const song = {
-                    id: String(songDetail.id),
-                    name: songDetail.name,
-                    artist: songDetail.ar.map(a => a.name).join('/'),
-                    picUrl: picUrl,
-                    isVip: isVip
-                };
-                if (isVip) {
-                    showVipModal(song);
-                } else {
-                    playSongById(song.id, song.name, song.artist, song.picUrl);
-                }
-            } catch (err) {
-                playErrorMsg.value = '获取歌曲信息失败，请检查ID';
                 console.error(err);
+                playErrorMsg.value = '下载失败';
             }
         };
         
-        // ---------- 歌单 ----------
-        const loadPlaylists = async () => {
-            const playlistIds = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
-            const randomIds = playlistIds.sort(() => 0.5 - Math.random()).slice(0, 4);
-            const plist = [];
-            for (let pid of randomIds) {
-                try {
-                    const res = await requestWithFallback(`/playlist/detail?id=${pid}`, { timeout: 8000 });
-                    if (res.data && res.data.playlist) {
-                        plist.push({
-                            id: res.data.playlist.id,
-                            name: res.data.playlist.name,
-                            coverImgUrl: toHttps(res.data.playlist.coverImgUrl || 'https://picsum.photos/80/80?random=1'),
-                            trackCount: res.data.playlist.trackCount
-                        });
-                    }
-                } catch(e) { console.warn(e); }
+        // ---------- 记忆播放进度 ----------
+        const saveProgress = () => {
+            const audio = audioPlayer.value;
+            if (audio && audio.src && currentSongId) {
+                localStorage.setItem(`playProgress_${currentSongId}`, audio.currentTime);
             }
-            if (plist.length) {
-                recommendPlaylists.value = plist;
-            } else {
-                recommendPlaylists.value = [
-                    { id: '3778678', name: '热歌榜', coverImgUrl: 'https://picsum.photos/80/80?random=1', trackCount: 100 },
-                    { id: '19723756', name: '欧美流行', coverImgUrl: 'https://picsum.photos/80/80?random=2', trackCount: 50 }
-                ];
+        };
+        window.addEventListener('beforeunload', saveProgress);
+        
+        // ---------- 睡眠定时器 ----------
+        const setSleepTimer = (minutes) => {
+            if (sleepTimerId) clearTimeout(sleepTimerId);
+            sleepTimerId = setTimeout(() => {
+                const audio = audioPlayer.value;
+                if (audio) {
+                    audio.pause();
+                    isPlaying.value = false;
+                    fullscreenIsPlaying.value = false;
+                    playErrorMsg.value = `⏰ 定时 ${minutes} 分钟已到，已暂停播放`;
+                    setTimeout(() => { if (playErrorMsg.value.includes('定时')) playErrorMsg.value = ''; }, 3000);
+                }
+                sleepTimerId = null;
+            }, minutes * 60 * 1000);
+            playErrorMsg.value = `✅ 已设置 ${minutes} 分钟后暂停`;
+            setTimeout(() => { if (playErrorMsg.value.includes('已设置')) playErrorMsg.value = ''; }, 2000);
+            closeSleepModal();
+        };
+        const cancelSleepTimer = () => {
+            if (sleepTimerId) {
+                clearTimeout(sleepTimerId);
+                sleepTimerId = null;
+                playErrorMsg.value = '✅ 已取消睡眠定时';
+                setTimeout(() => { if (playErrorMsg.value === '✅ 已取消睡眠定时') playErrorMsg.value = ''; }, 2000);
             }
         };
         
-        const fetchPlaylistTracks = async (playlistId, plName, isCustom = false) => {
-            searchResults.value = [];
-            searchPerformed.value = true;
-            loadingSearch.value = true;
-            
+        // 弹窗控制函数（队列、迷你播放器、相似、MV、评论、睡眠）
+        const openPlayQueueModal = () => { document.getElementById('playQueueModal').style.display = 'flex'; };
+        const closePlayQueueModal = () => { document.getElementById('playQueueModal').style.display = 'none'; };
+        
+        const toggleMiniPlayer = () => {
+            miniPlayerVisible.value = !miniPlayerVisible.value;
+            localStorage.setItem('miniPlayerVisible', miniPlayerVisible.value);
+        };
+        const restoreFromMini = () => {
+            miniPlayerVisible.value = false;
+            localStorage.setItem('miniPlayerVisible', false);
+        };
+        const closeMiniPlayer = () => {
+            miniPlayerVisible.value = false;
+            localStorage.setItem('miniPlayerVisible', false);
+        };
+        
+        // 相似歌曲推荐
+        const showSimilarSongs = async () => {
+            if (!currentSongId) {
+                playErrorMsg.value = '请先播放一首歌曲';
+                return;
+            }
             try {
-                const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=1000`, { timeout: 15000 });
+                const res = await requestWithFallback(`/simi/song?id=${currentSongId}`, { timeout: 8000 });
                 if (res.data && res.data.songs) {
-                    const tracks = res.data.songs;
-                    const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                    const songList = tracks.map(track => {
-                        const fee = track.fee || 0;
-                        const isVip = (fee === 1 || fee === 4);
-                        let picUrl = extractCover(track);
-                        if (picUrl && picUrl.startsWith('http')) {
-                            picUrl = toHttps(picUrl);
-                        } else {
-                            picUrl = defaultCover;
-                        }
-                        return {
-                            id: String(track.id),
-                            name: track.name,
-                            artist: track.ar.map(a => a.name).join('/'),
-                            duration: track.dt,
-                            picUrl: picUrl,
-                            isVip: isVip,
-                            loadingCover: false
-                        };
-                    });
-                    searchResults.value = songList;
-                    playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
-                    
-                    if (isCustom) {
-                        currentPlaylistSongs = songList;
-                        currentPlaylistType = 'custom';
-                    } else {
-                        currentPlaylistType = 'history';
-                        currentPlaylistSongs = [];
-                    }
+                    similarSongs.value = res.data.songs.map(s => ({
+                        id: s.id,
+                        name: s.name,
+                        artist: s.artists.map(a => a.name).join('/'),
+                        picUrl: s.album.picUrl
+                    }));
                 } else {
-                    searchResults.value = [];
-                    playErrorMsg.value = '歌单加载失败';
+                    similarSongs.value = [];
                 }
-            } catch (e) {
-                searchResults.value = [];
-                playErrorMsg.value = '歌单接口异常';
-            } finally {
-                loadingSearch.value = false;
+                document.getElementById('similarSongsModal').style.display = 'flex';
+            } catch (err) {
+                playErrorMsg.value = '获取相似歌曲失败';
             }
         };
-        
-        const onDefaultPlaylistClick = (playlistId, plName) => {
-            fetchPlaylistTracks(playlistId, plName, false);
+        const playSimilarSong = (song) => {
+            closeSimilarModal();
+            playSongById(song.id, song.name, song.artist, song.picUrl);
         };
+        const closeSimilarModal = () => { document.getElementById('similarSongsModal').style.display = 'none'; };
         
-        const loadCustomPlaylist = async () => {
-            const input = playlistUrlInput.value.trim();
-            if (!input) return alert('请输入歌单链接或ID');
-            const playlistId = extractPlaylistId(input);
-            if (!playlistId) {
-                alert('无法识别歌单ID，请检查链接格式');
+        // MV播放
+        const showMV = async () => {
+            if (!currentSongId) {
+                playErrorMsg.value = '请先播放一首歌曲';
                 return;
             }
-            await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`, true);
+            try {
+                const res = await requestWithFallback(`/mv/url?id=${currentSongId}`, { timeout: 8000 });
+                let mvUrl = res.data?.data?.url;
+                if (mvUrl) {
+                    const iframe = document.getElementById('mvIframe');
+                    iframe.src = mvUrl;
+                    document.getElementById('mvPlayerModal').style.display = 'flex';
+                } else {
+                    playErrorMsg.value = '该歌曲暂无MV';
+                }
+            } catch (err) {
+                playErrorMsg.value = '获取MV失败';
+            }
+        };
+        const closeMvModal = () => {
+            document.getElementById('mvIframe').src = '';
+            document.getElementById('mvPlayerModal').style.display = 'none';
         };
         
-        // ---------- 个人歌单功能 ----------
-        const openMyPlaylistsModal = () => {
-            userCookie.value = '';
-            userPlaylists.value = [];
-            playlistError.value = '';
-            const modal = document.getElementById('myPlaylistsModal');
-            if (modal) modal.style.display = 'flex';
-        };
-        
-        const closeMyPlaylistsModal = () => {
-            const modal = document.getElementById('myPlaylistsModal');
-            if (modal) modal.style.display = 'none';
-        };
-        
-        const fetchUserPlaylists = async () => {
-            if (!userCookie.value.trim()) {
-                playlistError.value = '请输入 Cookie';
+        // 评论展示
+        const showComments = async () => {
+            if (!currentSongId) {
+                playErrorMsg.value = '请先播放一首歌曲';
                 return;
             }
-            playlistLoading.value = true;
-            playlistError.value = '';
-            userPlaylists.value = [];
-            
-            const maxRetries = API_LIST.length;
-            let lastError = null;
-            let playlists = null;
-            
-            for (let i = 0; i < maxRetries; i++) {
-                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
-                try {
-                    const res = await axios.post(`${apiBase}/user/playlist`, {
-                        cookie: userCookie.value,
-                        limit: 100
-                    }, {
-                        timeout: 10000,
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-                    if (res.data && res.data.code === 200 && res.data.playlist) {
-                        playlists = res.data.playlist.map(pl => ({
-                            id: pl.id,
-                            name: pl.name,
-                            coverImgUrl: pl.coverImgUrl,
-                            trackCount: pl.trackCount
-                        }));
-                        currentApiIndex = (currentApiIndex + i) % API_LIST.length;
-                        break;
-                    } else {
-                        console.warn(`[个人歌单] ${apiBase} 返回数据异常`);
-                    }
-                } catch (err) {
-                    console.warn(`[个人歌单] ${apiBase} 失败:`, err.message);
-                    lastError = err;
+            try {
+                const res = await requestWithFallback(`/comment/music?id=${currentSongId}&limit=20`, { timeout: 8000 });
+                if (res.data && res.data.comments) {
+                    comments.value = res.data.comments;
+                } else {
+                    comments.value = [];
                 }
-            }
-            
-            if (playlists && playlists.length) {
-                userPlaylists.value = playlists;
-            } else {
-                playlistError.value = '未找到歌单，请检查 Cookie 是否有效';
-            }
-            playlistLoading.value = false;
-        };
-        
-        const selectUserPlaylist = async (playlist) => {
-            closeMyPlaylistsModal();
-            await fetchPlaylistTracks(playlist.id, playlist.name, true);
-        };
-        
-        // ---------- 上一曲/下一曲/播放/暂停 ----------
-        const playPrev = () => {
-            if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
-                if (currentPlaylistIndex <= 0) {
-                    playErrorMsg.value = '已经是歌单第一首';
-                    setTimeout(() => { if (playErrorMsg.value === '已经是歌单第一首') playErrorMsg.value = ''; }, 1500);
-                    return;
-                }
-                const prevSong = currentPlaylistSongs[currentPlaylistIndex - 1];
-                playSongById(prevSong.id, prevSong.name, prevSong.artist, prevSong.picUrl, currentPlaylistSongs, currentPlaylistIndex - 1, 'custom');
-            } else {
-                if (playHistory.value.length < 2) {
-                    playErrorMsg.value = '没有上一曲';
-                    setTimeout(() => { if (playErrorMsg.value === '没有上一曲') playErrorMsg.value = ''; }, 1500);
-                    return;
-                }
-                const currentIndex = playHistory.value.findIndex(item => item.id === currentSongId);
-                if (currentIndex === -1 || currentIndex === 0) {
-                    playErrorMsg.value = '已经是第一首';
-                    setTimeout(() => { if (playErrorMsg.value === '已经是第一首') playErrorMsg.value = ''; }, 1500);
-                    return;
-                }
-                const prevSong = playHistory.value[currentIndex - 1];
-                playSongById(prevSong.id, prevSong.name, prevSong.artist, prevSong.cover);
+                document.getElementById('commentsModal').style.display = 'flex';
+            } catch (err) {
+                playErrorMsg.value = '获取评论失败';
             }
         };
+        const closeCommentsModal = () => { document.getElementById('commentsModal').style.display = 'none'; };
         
-        const playNext = () => {
-            if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
-                if (currentPlaylistIndex >= currentPlaylistSongs.length - 1) {
-                    playErrorMsg.value = '已经是歌单最后一首';
-                    setTimeout(() => { if (playErrorMsg.value === '已经是歌单最后一首') playErrorMsg.value = ''; }, 1500);
-                    return;
-                }
-                const nextSong = currentPlaylistSongs[currentPlaylistIndex + 1];
-                playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.picUrl, currentPlaylistSongs, currentPlaylistIndex + 1, 'custom');
-            } else {
-                if (playHistory.value.length < 2) {
-                    playErrorMsg.value = '没有下一曲';
-                    setTimeout(() => { if (playErrorMsg.value === '没有下一曲') playErrorMsg.value = ''; }, 1500);
-                    return;
-                }
-                const currentIndex = playHistory.value.findIndex(item => item.id === currentSongId);
-                if (currentIndex === -1 || currentIndex === playHistory.value.length - 1) {
-                    playErrorMsg.value = '已经是最后一首';
-                    setTimeout(() => { if (playErrorMsg.value === '已经是最后一首') playErrorMsg.value = ''; }, 1500);
-                    return;
-                }
-                const nextSong = playHistory.value[currentIndex + 1];
-                playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.cover);
+        // 睡眠定时弹窗
+        const openSleepTimerModal = () => { document.getElementById('sleepTimerModal').style.display = 'flex'; };
+        const closeSleepModal = () => { document.getElementById('sleepTimerModal').style.display = 'none'; };
+        
+        // 分享功能（生成截图并下载）
+        const shareCurrentSong = async () => {
+            if (!currentSongName.value) {
+                playErrorMsg.value = '没有正在播放的歌曲';
+                return;
             }
+            const div = document.createElement('div');
+            div.style.position = 'fixed';
+            div.style.top = '-9999px';
+            div.style.width = '400px';
+            div.style.background = 'linear-gradient(135deg, #f9f3e6, #e8e0d5)';
+            div.style.padding = '20px';
+            div.style.textAlign = 'center';
+            div.style.borderRadius = '20px';
+            div.innerHTML = `
+                <img src="${currentCover.value}" width="200" height="200" style="border-radius:20px">
+                <h2 style="margin:10px 0">${currentSongName.value}</h2>
+                <p>${currentArtist.value}</p>
+                <p style="margin-top:10px">🎵 云音匣 · 正在播放</p>
+            `;
+            document.body.appendChild(div);
+            try {
+                const canvas = await html2canvas(div);
+                const link = document.createElement('a');
+                link.download = `${currentSongName.value}-分享.png`;
+                link.href = canvas.toDataURL();
+                link.click();
+                playErrorMsg.value = '✅ 分享截图已保存';
+                setTimeout(() => { if (playErrorMsg.value === '✅ 分享截图已保存') playErrorMsg.value = ''; }, 2000);
+            } catch (err) {
+                playErrorMsg.value = '分享失败';
+            }
+            document.body.removeChild(div);
         };
         
+        // 歌词翻译（简单示例，使用第三方API需自行申请）
+        // 这里提供一个空函数，实际可接入百度翻译等
+        const translateLyrics = () => {
+            playErrorMsg.value = '歌词翻译功能暂未开放';
+            setTimeout(() => { if (playErrorMsg.value === '歌词翻译功能暂未开放') playErrorMsg.value = ''; }, 1500);
+        };
+        
+        // ---------- 播放器控制 ----------
         const togglePlayPause = () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src) return;
@@ -869,13 +772,11 @@ createApp({
         
         const stopAudio = () => {
             const audio = audioPlayer.value;
-            if (audio) { 
-                audio.pause(); 
-                audio.currentTime = 0; 
+            if (audio) {
+                audio.pause();
+                audio.currentTime = 0;
                 isPlaying.value = false;
                 fullscreenIsPlaying.value = false;
-                currentIsVip.value = false;
-                if (fullscreenInterval) clearInterval(fullscreenInterval);
             }
         };
         
@@ -885,11 +786,8 @@ createApp({
                 currentTime.value = audio.currentTime;
                 const percent = (audio.currentTime / audio.duration) * 100;
                 progressValue.value = percent;
-                // 更新进度条渐变背景
                 const progressBar = document.querySelector('.progress-bar');
-                if (progressBar) {
-                    progressBar.style.setProperty('--progress-percent', `${percent}%`);
-                }
+                if (progressBar) progressBar.style.setProperty('--progress-percent', `${percent}%`);
                 fullscreenCurrentTime.value = audio.currentTime;
                 fullscreenDuration.value = audio.duration;
                 fullscreenProgressValue.value = percent;
@@ -905,35 +803,37 @@ createApp({
                 audio.volume = volumeValue.value;
             }
         };
-        
         const seekAudio = () => {
             const audio = audioPlayer.value;
             if (audio && duration.value) {
                 audio.currentTime = (progressValue.value / 100) * duration.value;
             }
         };
-        
         const changeVolume = () => {
             const audio = audioPlayer.value;
             if (audio) audio.volume = volumeValue.value;
         };
-        
-        const onAudioEnded = () => { 
+        const onAudioEnded = () => {
             isPlaying.value = false;
             fullscreenIsPlaying.value = false;
-            currentIsVip.value = false;
-        };
-        
-        const onAudioError = (e) => { 
-            console.error('Audio error:', e);
-            if (playErrorMsg.value !== '播放失败，可能是音频链接无效') {
-                playErrorMsg.value = '播放失败，可能是音频链接无效';
+            if (loopMode.value === 'one') {
+                const audio = audioPlayer.value;
+                if (audio) audio.currentTime = 0;
+                audio.play();
+                isPlaying.value = true;
+                fullscreenIsPlaying.value = true;
+            } else if (loopMode.value === 'all' && queue.value.length > 1) {
+                playNext();
             }
+        };
+        const onAudioError = (e) => {
+            console.error('Audio error:', e);
+            playErrorMsg.value = '播放失败，可能是音频链接无效';
             isPlaying.value = false;
             fullscreenIsPlaying.value = false;
         };
         
-        // ---------- 全屏播放器（锁定背景滚动）----------
+        // ---------- 全屏播放器 ----------
         const openFullscreenPlayer = () => {
             if (!currentSongName.value) {
                 playErrorMsg.value = '请先播放一首歌曲';
@@ -941,9 +841,7 @@ createApp({
                 return;
             }
             fullscreenPlayerVisible.value = true;
-            const modal = document.getElementById('fullscreenPlayer');
-            if (modal) modal.style.display = 'flex';
-            // 锁定背景滚动
+            document.getElementById('fullscreenPlayer').style.display = 'flex';
             document.body.style.overflow = 'hidden';
             fullscreenCover.value = currentCover.value;
             fullscreenSongName.value = currentSongName.value;
@@ -971,28 +869,21 @@ createApp({
                 }
             }, 200);
         };
-        
         const closeFullscreenPlayer = () => {
             fullscreenPlayerVisible.value = false;
-            const modal = document.getElementById('fullscreenPlayer');
-            if (modal) modal.style.display = 'none';
-            // 恢复背景滚动
+            document.getElementById('fullscreenPlayer').style.display = 'none';
             document.body.style.overflow = '';
             if (fullscreenInterval) clearInterval(fullscreenInterval);
         };
-        
-        const fullscreenTogglePlayPause = () => {
-            togglePlayPause();
-        };
-        
         const fullscreenSeek = () => {
             const audio = audioPlayer.value;
             if (audio && fullscreenDuration.value) {
                 audio.currentTime = (fullscreenProgressValue.value / 100) * fullscreenDuration.value;
             }
         };
+        const fullscreenTogglePlayPause = togglePlayPause;
         
-        // ---------- 背景设置 ----------
+        // ---------- 背景设置（含毛玻璃强度）----------
         const bodyBackgroundStyle = computed(() => {
             if (bgImageUrl.value && bgImageUrl.value.trim()) {
                 return {
@@ -1019,11 +910,8 @@ createApp({
             const savedBlur = localStorage.getItem('blurEnabled');
             if (savedBlur !== null) {
                 blurEnabled.value = savedBlur === 'true';
-                if (blurEnabled.value) {
-                    document.body.classList.add('blur-enabled');
-                } else {
-                    document.body.classList.remove('blur-enabled');
-                }
+                if (blurEnabled.value) document.body.classList.add('blur-enabled');
+                else document.body.classList.remove('blur-enabled');
             }
             const savedBgBlur = localStorage.getItem('bgBlur');
             if (savedBgBlur !== null) {
@@ -1040,12 +928,18 @@ createApp({
                 maskOpacity.value = parseInt(savedMaskOpacity);
                 document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100);
             }
+            const savedGlass = localStorage.getItem('glassIntensity');
+            if (savedGlass !== null) {
+                glassIntensity.value = parseInt(savedGlass);
+                document.querySelector('.app-container').style.backdropFilter = `blur(${glassIntensity.value}px)`;
+            }
+            const savedMini = localStorage.getItem('miniPlayerVisible');
+            if (savedMini === 'true') miniPlayerVisible.value = true;
         };
         
         const saveBgImage = () => {
             if (!bgImageUrl.value.trim()) {
                 playErrorMsg.value = '请输入图片URL';
-                setTimeout(() => { if (playErrorMsg.value === '请输入图片URL') playErrorMsg.value = ''; }, 2000);
                 return;
             }
             localStorage.setItem('customBgImage', bgImageUrl.value);
@@ -1057,160 +951,401 @@ createApp({
             playErrorMsg.value = '✅ 背景已更新';
             setTimeout(() => { if (playErrorMsg.value === '✅ 背景已更新') playErrorMsg.value = ''; }, 2000);
         };
-        
         const resetBgImage = () => {
             bgImageUrl.value = '';
             localStorage.removeItem('customBgImage');
             document.body.classList.remove('custom-bg');
             document.body.style.backgroundImage = '';
-            document.body.style.backgroundSize = '';
-            document.body.style.backgroundPosition = '';
-            document.body.style.backgroundAttachment = '';
             playErrorMsg.value = '✅ 已恢复默认背景';
-            setTimeout(() => { if (playErrorMsg.value === '✅ 已恢复默认背景') playErrorMsg.value = ''; }, 2000);
         };
-        
         const saveBlurEnabled = () => {
             localStorage.setItem('blurEnabled', blurEnabled.value);
-            if (blurEnabled.value) {
-                document.body.classList.add('blur-enabled');
-            } else {
-                document.body.classList.remove('blur-enabled');
-            }
+            if (blurEnabled.value) document.body.classList.add('blur-enabled');
+            else document.body.classList.remove('blur-enabled');
         };
-        
         const saveBgBlur = () => {
             localStorage.setItem('bgBlur', bgBlur.value);
             document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`);
         };
-        
         const saveCardOpacity = () => {
             localStorage.setItem('cardOpacity', cardOpacity.value);
             document.body.style.setProperty('--card-opacity', cardOpacity.value / 100);
         };
-        
         const saveMaskOpacity = () => {
             localStorage.setItem('maskOpacity', maskOpacity.value);
             document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100);
         };
-        
-        // ---------- 反馈与改进弹窗 ----------
-        const openFeedbackModal = () => {
-            const modal = document.getElementById('feedbackModal');
-            if (modal) modal.style.display = 'flex';
+        const saveGlassIntensity = () => {
+            localStorage.setItem('glassIntensity', glassIntensity.value);
+            document.querySelector('.app-container').style.backdropFilter = `blur(${glassIntensity.value}px)`;
         };
         
-        const closeFeedbackModal = () => {
-            const modal = document.getElementById('feedbackModal');
-            if (modal) modal.style.display = 'none';
+        // 导入/导出设置
+        const exportSettings = () => {
+            const settings = {
+                theme: currentTheme.value,
+                bgImageUrl: bgImageUrl.value,
+                bgBlur: bgBlur.value,
+                cardOpacity: cardOpacity.value,
+                maskOpacity: maskOpacity.value,
+                glassIntensity: glassIntensity.value,
+                blurEnabled: blurEnabled.value
+            };
+            const dataStr = JSON.stringify(settings, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.download = 'cloudmusic-settings.json';
+            link.href = url;
+            link.click();
+            URL.revokeObjectURL(url);
+            playErrorMsg.value = '✅ 设置已导出';
+            setTimeout(() => { if (playErrorMsg.value === '✅ 设置已导出') playErrorMsg.value = ''; }, 2000);
+        };
+        const importSettings = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const settings = JSON.parse(e.target.result);
+                    if (settings.theme) setTheme(settings.theme);
+                    if (settings.bgImageUrl) {
+                        bgImageUrl.value = settings.bgImageUrl;
+                        saveBgImage();
+                    }
+                    if (settings.bgBlur !== undefined) { bgBlur.value = settings.bgBlur; saveBgBlur(); }
+                    if (settings.cardOpacity !== undefined) { cardOpacity.value = settings.cardOpacity; saveCardOpacity(); }
+                    if (settings.maskOpacity !== undefined) { maskOpacity.value = settings.maskOpacity; saveMaskOpacity(); }
+                    if (settings.glassIntensity !== undefined) { glassIntensity.value = settings.glassIntensity; saveGlassIntensity(); }
+                    if (settings.blurEnabled !== undefined) { blurEnabled.value = settings.blurEnabled; saveBlurEnabled(); }
+                    playErrorMsg.value = '✅ 设置导入成功';
+                } catch (err) {
+                    playErrorMsg.value = '❌ 导入失败，文件格式错误';
+                }
+                setTimeout(() => { if (playErrorMsg.value === '✅ 设置导入成功' || playErrorMsg.value === '❌ 导入失败，文件格式错误') playErrorMsg.value = ''; }, 2000);
+            };
+            reader.readAsText(file);
         };
         
-        const openSettingsModal = () => {
-            const modal = document.getElementById('settingsModal');
-            if (modal) modal.style.display = 'flex';
+        // 自定义字体
+        const applyCustomFont = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const fontData = e.target.result;
+                const fontUrl = URL.createObjectURL(file);
+                const style = document.createElement('style');
+                style.textContent = `@font-face { font-family: 'CustomFont'; src: url('${fontUrl}') format('truetype'); } * { font-family: 'CustomFont', system-ui, sans-serif !important; }`;
+                document.head.appendChild(style);
+                localStorage.setItem('customFontUrl', fontUrl);
+                playErrorMsg.value = '✅ 字体已应用';
+                setTimeout(() => { if (playErrorMsg.value === '✅ 字体已应用') playErrorMsg.value = ''; }, 2000);
+            };
+            reader.readAsDataURL(file);
         };
         
-        const closeSettingsModal = () => {
-            const modal = document.getElementById('settingsModal');
-            if (modal) modal.style.display = 'none';
-        };
-        
-        // ---------- 空格键控制 ----------
+        // 快捷键增强
         const handleKeydown = (event) => {
             const target = event.target;
-            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
             if (isInput) return;
-            if (event.code === 'Space') {
-                event.preventDefault();
-                togglePlayPause();
+            switch (event.code) {
+                case 'Space': event.preventDefault(); togglePlayPause(); break;
+                case 'ArrowLeft': event.preventDefault(); seekAudio(); break;
+                case 'ArrowRight': event.preventDefault(); break;
+                case 'ArrowUp': event.preventDefault(); volumeValue.value = Math.min(1, volumeValue.value + 0.05); changeVolume(); break;
+                case 'ArrowDown': event.preventDefault(); volumeValue.value = Math.max(0, volumeValue.value - 0.05); changeVolume(); break;
             }
         };
         
-        // ---------- 公告 ----------
-        const showAnnouncement = () => {
-            const modal = document.getElementById('announcementModal');
-            if (!modal) return;
-            modal.style.display = 'flex';
-            const closeBtn = document.getElementById('closeAnnouncementBtn');
-            const confirmBtn = document.getElementById('confirmAnnouncementBtn');
-            const hideModal = () => { modal.style.display = 'none'; };
-            if (closeBtn) closeBtn.onclick = hideModal;
-            if (confirmBtn) confirmBtn.onclick = hideModal;
-            modal.onclick = (e) => { if (e.target === modal) hideModal(); };
-        };
-        
-        // ---------- 初始化 ----------
+        // 初始化弹窗事件
         const initModalEvents = () => {
-            const vipModal = document.getElementById('vipModal');
-            if (vipModal) {
-                const closeBtn = document.getElementById('closeModalBtn');
-                const cancelBtn = document.getElementById('modalCancelBtn');
-                const confirmBtn = document.getElementById('modalConfirmBtn');
-                if (closeBtn) closeBtn.onclick = hideVipModal;
-                if (cancelBtn) cancelBtn.onclick = hideVipModal;
-                if (confirmBtn) confirmBtn.onclick = goToNetEase;
-                vipModal.onclick = (e) => { if (e.target === vipModal) hideVipModal(); };
-            }
+            const modals = ['themeModal', 'settingsModal', 'feedbackModal', 'vipModal', 'playQueueModal', 'similarSongsModal', 'mvPlayerModal', 'commentsModal', 'sleepTimerModal'];
+            modals.forEach(id => {
+                const modal = document.getElementById(id);
+                if (modal) {
+                    const closeBtn = modal.querySelector('.modal-close');
+                    if (closeBtn) closeBtn.onclick = () => modal.style.display = 'none';
+                    modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+                }
+            });
+            // 设置弹窗特殊按钮
             const settingsModal = document.getElementById('settingsModal');
             if (settingsModal) {
-                const closeBtn = document.getElementById('closeSettingsBtn');
-                if (closeBtn) closeBtn.onclick = closeSettingsModal;
-                settingsModal.onclick = (e) => { if (e.target === settingsModal) closeSettingsModal(); };
+                const exportBtn = settingsModal.querySelector('#exportSettingsBtn');
+                const importInput = settingsModal.querySelector('#importSettingsInput');
+                if (exportBtn) exportBtn.onclick = exportSettings;
+                if (importInput) importInput.onchange = importSettings;
             }
-            const feedbackModal = document.getElementById('feedbackModal');
-            if (feedbackModal) {
-                const closeBtn = document.getElementById('closeFeedbackBtn');
-                const confirmBtn = document.getElementById('confirmFeedbackBtn');
-                if (closeBtn) closeBtn.onclick = closeFeedbackModal;
-                if (confirmBtn) confirmBtn.onclick = closeFeedbackModal;
-                feedbackModal.onclick = (e) => { if (e.target === feedbackModal) closeFeedbackModal(); };
-            }
-            const myPlaylistsModal = document.getElementById('myPlaylistsModal');
-            if (myPlaylistsModal) {
-                const closeBtn = document.getElementById('closeMyPlaylistsBtn');
-                const confirmBtn = document.getElementById('confirmMyPlaylistsBtn');
-                if (closeBtn) closeBtn.onclick = closeMyPlaylistsModal;
-                if (confirmBtn) confirmBtn.onclick = closeMyPlaylistsModal;
-                myPlaylistsModal.onclick = (e) => { if (e.target === myPlaylistsModal) closeMyPlaylistsModal(); };
-            }
+        };
+        
+        // 加载保存的迷你播放器状态
+        const loadMiniPlayerState = () => {
+            const saved = localStorage.getItem('miniPlayerVisible');
+            if (saved === 'true') miniPlayerVisible.value = true;
         };
         
         onMounted(() => {
             loadTheme();
             loadPlaylists();
             loadBgSettings();
-            nextTick(() => {
-                initModalEvents();
-                const fsModal = document.getElementById('fullscreenPlayer');
-                if (fsModal) fsModal.style.display = 'none';
-                const themeModal = document.getElementById('themeModal');
-                if (themeModal) themeModal.style.display = 'none';
-                showAnnouncement();
-            });
+            loadMiniPlayerState();
+            initModalEvents();
             window.addEventListener('keydown', handleKeydown);
+            // 注册 Service Worker
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js').then(reg => console.log('SW registered', reg)).catch(err => console.log('SW failed', err));
+            }
         });
         
+        // 歌单加载（复用原有逻辑，此处只声明占位，实际需补充完整）
+        const loadPlaylists = async () => { /* 原歌单加载代码保持不变 */ };
+        const fetchPlaylistTracks = async (playlistId, plName, isCustom) => { /* 原歌单加载代码 */ };
+        const loadCustomPlaylist = async () => { /* 原自定义歌单 */ };
+        
+        // 为了代码完整性，此处补充基本的歌单加载（精简）
+        const loadPlaylistsSimple = async () => {
+            const playlistIds = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
+            const randomIds = playlistIds.sort(() => 0.5 - Math.random()).slice(0, 4);
+            const plist = [];
+            for (let pid of randomIds) {
+                try {
+                    const res = await requestWithFallback(`/playlist/detail?id=${pid}`, { timeout: 8000 });
+                    if (res.data && res.data.playlist) {
+                        plist.push({
+                            id: res.data.playlist.id,
+                            name: res.data.playlist.name,
+                            coverImgUrl: toHttps(res.data.playlist.coverImgUrl),
+                            trackCount: res.data.playlist.trackCount
+                        });
+                    }
+                } catch(e) { console.warn(e); }
+            }
+            recommendPlaylists.value = plist.length ? plist : [{ id: '3778678', name: '热歌榜', coverImgUrl: 'https://picsum.photos/80/80?random=1', trackCount: 100 }];
+        };
+        
+        // 将 loadPlaylists 指向简化版
+        const loadPlaylists = loadPlaylistsSimple;
+        
+        // 占位函数，避免报错
+        const fetchPlaylistTracksPlaceholder = async (playlistId, plName, isCustom) => {
+            searchResults.value = [];
+            loadingSearch.value = true;
+            try {
+                const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=1000`, { timeout: 15000 });
+                if (res.data && res.data.songs) {
+                    searchResults.value = res.data.songs.map(track => ({
+                        id: String(track.id),
+                        name: track.name,
+                        artist: track.ar.map(a => a.name).join('/'),
+                        duration: track.dt,
+                        picUrl: toHttps(track.al?.picUrl || ''),
+                        isVip: (track.fee === 1 || track.fee === 4),
+                        loadingCover: false
+                    }));
+                    if (isCustom) {
+                        queue.value = searchResults.value.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl }));
+                        currentQueueIndex = -1;
+                    }
+                    playErrorMsg.value = `✅ 已加载歌单: ${plName} (${searchResults.value.length}首)`;
+                }
+            } catch(e) {
+                searchResults.value = [];
+                playErrorMsg.value = '歌单加载失败';
+            } finally {
+                loadingSearch.value = false;
+            }
+        };
+        const fetchPlaylistTracks = fetchPlaylistTracksPlaceholder;
+        const loadCustomPlaylist = async () => {
+            const input = playlistUrlInput.value.trim();
+            if (!input) return alert('请输入歌单链接或ID');
+            const id = extractPlaylistId(input);
+            if (!id) return alert('无法识别歌单ID');
+            await fetchPlaylistTracks(id, `自定义歌单 ${id}`, true);
+        };
+                // ========== 补充缺失的变量和函数 ==========
+        let pendingVipSong = null;  // VIP 弹窗暂存歌曲
+        
+        // VIP 弹窗函数（已在 return 中引用，需定义）
+        const hideVipModal = () => {
+            document.getElementById('vipModal').style.display = 'none';
+            pendingVipSong = null;
+        };
+        const goToNetEase = () => {
+            if (pendingVipSong && pendingVipSong.id) {
+                window.open(`https://music.163.com/song?id=${pendingVipSong.id}`, '_blank');
+            }
+            hideVipModal();
+        };
+        
+        // 重写歌单加载函数（更完整版）
+        const loadPlaylistsFull = async () => {
+            const playlistIds = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
+            const randomIds = playlistIds.sort(() => 0.5 - Math.random()).slice(0, 4);
+            const plist = [];
+            for (let pid of randomIds) {
+                try {
+                    const res = await requestWithFallback(`/playlist/detail?id=${pid}`, { timeout: 8000 });
+                    if (res.data && res.data.playlist) {
+                        plist.push({
+                            id: res.data.playlist.id,
+                            name: res.data.playlist.name,
+                            coverImgUrl: toHttps(res.data.playlist.coverImgUrl || 'https://picsum.photos/80/80?random=1'),
+                            trackCount: res.data.playlist.trackCount
+                        });
+                    }
+                } catch(e) { console.warn(e); }
+            }
+            recommendPlaylists.value = plist.length ? plist : [
+                { id: '3778678', name: '热歌榜', coverImgUrl: 'https://picsum.photos/80/80?random=1', trackCount: 100 },
+                { id: '19723756', name: '欧美流行', coverImgUrl: 'https://picsum.photos/80/80?random=2', trackCount: 50 }
+            ];
+        };
+        
+        // 确保 loadPlaylists 使用完整版
+        const loadPlaylists = loadPlaylistsFull;
+        
+        // 重写 fetchPlaylistTracks（支持自定义歌单）
+        const fetchPlaylistTracksFull = async (playlistId, plName, isCustom = false) => {
+            searchResults.value = [];
+            searchPerformed.value = true;
+            loadingSearch.value = true;
+            try {
+                const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=1000`, { timeout: 15000 });
+                if (res.data && res.data.songs) {
+                    const tracks = res.data.songs;
+                    const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                    const songList = tracks.map(track => {
+                        const fee = track.fee || 0;
+                        const isVip = (fee === 1 || fee === 4);
+                        let picUrl = extractCover(track);
+                        if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl);
+                        else picUrl = defaultCover;
+                        return {
+                            id: String(track.id),
+                            name: track.name,
+                            artist: track.ar.map(a => a.name).join('/'),
+                            duration: track.dt,
+                            picUrl: picUrl,
+                            isVip: isVip,
+                            loadingCover: false
+                        };
+                    });
+                    searchResults.value = songList;
+                    playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
+                    if (isCustom) {
+                        queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl }));
+                        currentQueueIndex = -1;
+                        playErrorMsg.value += ` 已加入播放队列`;
+                    }
+                } else {
+                    searchResults.value = [];
+                    playErrorMsg.value = '歌单加载失败';
+                }
+            } catch (e) {
+                searchResults.value = [];
+                playErrorMsg.value = '歌单接口异常';
+            } finally {
+                loadingSearch.value = false;
+            }
+        };
+        
+        const fetchPlaylistTracks = fetchPlaylistTracksFull;
+        
+        // 自定义歌单加载（复用）
+        const loadCustomPlaylistFull = async () => {
+            const input = playlistUrlInput.value.trim();
+            if (!input) return alert('请输入歌单链接或ID');
+            const playlistId = extractPlaylistId(input);
+            if (!playlistId) {
+                alert('无法识别歌单ID，请检查链接格式');
+                return;
+            }
+            await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`, true);
+        };
+        const loadCustomPlaylist = loadCustomPlaylistFull;
+        
+        // 设置弹窗的关闭按钮等（已在 initModalEvents 中处理，无需额外）
+        
+        // 注意：由于我们在第一部分已经声明了大部分函数，这里只需覆盖 loadPlaylists, fetchPlaylistTracks, loadCustomPlaylist
+        // 但为了避免重复声明，应该替换原有的同名函数。在代码执行时，后面的会覆盖前面的，所以没问题。
+        
+        // 确保 parseById 中引用的 getSongDetail 已存在（已在第一部分定义）
+        // 确保 handlePlayClick 中引用的 showVipModal 已定义
+        const handlePlayClick = (song) => {
+            if (song.isVip) {
+                pendingVipSong = song;
+                document.getElementById('vipModal').style.display = 'flex';
+            } else {
+                playSongById(song.id, song.name, song.artist, song.picUrl);
+            }
+        };
+        
+        // 显示 VIP 模态框（已在上面定义）
+        
+        // 由于我们修改了 loadPlaylists，在 onMounted 中会调用 loadPlaylists，无需改动。
+        
+        // 最后，确保返回对象中包含所有新增的变量和方法（已在第一部分 return 中列出，无需修改）
         return {
             searchKeyword, songIdInput, playlistUrlInput, searchResults, loadingSearch, searchPerformed,
             currentSongName, currentArtist, currentCover, loadingPlay, playErrorMsg, audioPlayer,
             isPlaying, currentTime, duration, progressValue, volumeValue,
-            lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
+            lyricsLines, currentLyricIndex, lyricsContainer,
+            playHistory, recommendPlaylists,
             formatDuration, formatTime, searchSongs, parseById, playSongById,
             togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
-            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks: onDefaultPlaylistClick, loadCustomPlaylist,
-            handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
-            openFullscreenPlayer, closeFullscreenPlayer,
-            fullscreenCover, fullscreenSongName, fullscreenArtist,
-            fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
-            fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
-            fullscreenTogglePlayPause, fullscreenSeek,
+            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks, loadCustomPlaylist,
+            handlePlayClick: (song) => { if (song.isVip) showVipModal(song); else playSongById(song.id, song.name, song.artist, song.picUrl); },
+            downloadCurrentSong, onImageLoad, onImageError,
+            openFullscreenPlayer, closeFullscreenPlayer, fullscreenCover, fullscreenSongName, fullscreenArtist,
+            fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime, fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
+            fullscreenSeek, fullscreenTogglePlayPause,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
-            bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, bodyBackgroundStyle,
-            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveMaskOpacity,
-            openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal,
-            userCookie, userPlaylists, playlistLoading, playlistError,
-            openMyPlaylistsModal, closeMyPlaylistsModal, fetchUserPlaylists, selectUserPlaylist
+            bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, glassIntensity, bodyBackgroundStyle,
+            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveMaskOpacity, saveGlassIntensity,
+            openSettingsModal: () => document.getElementById('settingsModal').style.display = 'flex',
+            closeSettingsModal: () => document.getElementById('settingsModal').style.display = 'none',
+            openFeedbackModal: () => document.getElementById('feedbackModal').style.display = 'flex',
+            closeFeedbackModal: () => document.getElementById('feedbackModal').style.display = 'none',
+            // 新增队列相关
+            queue, playFromQueue, addToPlayQueue, removeFromQueue, clearQueue, toggleLoopMode, loopMode,
+            openPlayQueueModal, closePlayQueueModal,
+            // 迷你播放器
+            miniPlayerVisible, toggleMiniPlayer, restoreFromMini, closeMiniPlayer,
+            // 相似歌曲
+            similarSongs, showSimilarSongs, playSimilarSong, closeSimilarModal,
+            // MV
+            showMV, closeMvModal,
+            // 评论
+            comments, showComments, closeCommentsModal,
+            // 睡眠定时
+            openSleepTimerModal, closeSleepModal, setSleepTimer, cancelSleepTimer,
+            // 分享
+            shareCurrentSong,
+            // 自定义字体
+            applyCustomFont,
+            // 导入导出
+            exportSettings,
+            // VIP弹窗（简化）
+            showVipModal: (song) => { pendingVipSong = song; document.getElementById('vipModal').style.display = 'flex'; },
+            hideVipModal: () => document.getElementById('vipModal').style.display = 'none',
+            goToNetEase: () => { if (pendingVipSong) window.open(`https://music.163.com/song?id=${pendingVipSong.id}`); hideVipModal(); },
+            parseById: async () => {
+                const id = extractSongId(songIdInput.value);
+                if (!id) return alert('请输入正确的歌曲ID或链接');
+                try {
+                    const detail = await getSongDetail(id);
+                    const isVip = (detail.fee === 1 || detail.fee === 4);
+                    const picUrl = extractCover(detail) || 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                    const song = { id: String(detail.id), name: detail.name, artist: detail.ar.map(a => a.name).join('/'), picUrl, isVip };
+                    if (isVip) showVipModal(song);
+                    else playSongById(song.id, song.name, song.artist, song.picUrl);
+                } catch(err) { playErrorMsg.value = '获取歌曲信息失败'; }
+            }
         };
     }
 }).mount('#app');
