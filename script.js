@@ -724,7 +724,6 @@ createApp({
         
         // ---------- 空格键控制播放/暂停 ----------
         const handleKeydown = (event) => {
-            // 如果焦点在输入框或可编辑元素中，不处理空格键
             const target = event.target;
             const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
             if (isInput) return;
@@ -759,7 +758,6 @@ createApp({
                 const themeModal = document.getElementById('themeModal');
                 if (themeModal) themeModal.style.display = 'none';
             });
-            // 添加全局键盘监听
             window.addEventListener('keydown', handleKeydown);
         });
         
