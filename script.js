@@ -61,6 +61,12 @@ createApp({
         const cardOpacity = ref(100);
         const maskOpacity = ref(30);
         
+        // 个人歌单相关
+        const userCookie = ref('');
+        const userPlaylists = ref([]);
+        const playlistLoading = ref(false);
+        const playlistError = ref('');
+        
         // ---------- API 列表 ----------
         const API_LIST = [
             'https://meting-api-pi-one.vercel.app',
@@ -726,6 +732,74 @@ createApp({
             await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`, true);
         };
         
+        // ---------- 个人歌单功能 ----------
+        const openMyPlaylistsModal = () => {
+            userCookie.value = '';
+            userPlaylists.value = [];
+            playlistError.value = '';
+            const modal = document.getElementById('myPlaylistsModal');
+            if (modal) modal.style.display = 'flex';
+        };
+        
+        const closeMyPlaylistsModal = () => {
+            const modal = document.getElementById('myPlaylistsModal');
+            if (modal) modal.style.display = 'none';
+        };
+        
+        const fetchUserPlaylists = async () => {
+            if (!userCookie.value.trim()) {
+                playlistError.value = '请输入 Cookie';
+                return;
+            }
+            playlistLoading.value = true;
+            playlistError.value = '';
+            userPlaylists.value = [];
+            
+            const maxRetries = API_LIST.length;
+            let lastError = null;
+            let playlists = null;
+            
+            for (let i = 0; i < maxRetries; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                try {
+                    const res = await axios.post(`${apiBase}/user/playlist`, {
+                        cookie: userCookie.value,
+                        limit: 100
+                    }, {
+                        timeout: 10000,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    if (res.data && res.data.code === 200 && res.data.playlist) {
+                        playlists = res.data.playlist.map(pl => ({
+                            id: pl.id,
+                            name: pl.name,
+                            coverImgUrl: pl.coverImgUrl,
+                            trackCount: pl.trackCount
+                        }));
+                        currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                        break;
+                    } else {
+                        console.warn(`[个人歌单] ${apiBase} 返回数据异常`);
+                    }
+                } catch (err) {
+                    console.warn(`[个人歌单] ${apiBase} 失败:`, err.message);
+                    lastError = err;
+                }
+            }
+            
+            if (playlists && playlists.length) {
+                userPlaylists.value = playlists;
+            } else {
+                playlistError.value = '未找到歌单，请检查 Cookie 是否有效';
+            }
+            playlistLoading.value = false;
+        };
+        
+        const selectUserPlaylist = async (playlist) => {
+            closeMyPlaylistsModal();
+            await fetchPlaylistTracks(playlist.id, playlist.name, true);
+        };
+        
         // ---------- 上一曲/下一曲 ----------
         const playPrev = () => {
             if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
@@ -780,19 +854,7 @@ createApp({
         };
         
         // ---------- 播放器控制 ----------
-        const togglePlayPause = () => {
-            const audio = audioPlayer.value;
-            if (!audio || !audio.src) return;
-            if (audio.paused) {
-                audio.play();
-                isPlaying.value = true;
-                fullscreenIsPlaying.value = true;
-            } else {
-                audio.pause();
-                isPlaying.value = false;
-                fullscreenIsPlaying.value = false;
-            }
-        };
+        // 已删除 togglePlayPause 函数
         
         const stopAudio = () => {
             const audio = audioPlayer.value;
@@ -810,10 +872,16 @@ createApp({
             const audio = audioPlayer.value;
             if (audio && audio.duration) {
                 currentTime.value = audio.currentTime;
-                progressValue.value = (audio.currentTime / audio.duration) * 100;
+                const percent = (audio.currentTime / audio.duration) * 100;
+                progressValue.value = percent;
+                // 更新进度条渐变背景
+                const progressBar = document.querySelector('.progress-bar');
+                if (progressBar) {
+                    progressBar.style.setProperty('--progress-percent', `${percent}%`);
+                }
                 fullscreenCurrentTime.value = audio.currentTime;
                 fullscreenDuration.value = audio.duration;
-                fullscreenProgressValue.value = (audio.currentTime / audio.duration) * 100;
+                fullscreenProgressValue.value = percent;
                 updateLyrics(audio.currentTime);
             }
         };
@@ -896,10 +964,6 @@ createApp({
             const modal = document.getElementById('fullscreenPlayer');
             if (modal) modal.style.display = 'none';
             if (fullscreenInterval) clearInterval(fullscreenInterval);
-        };
-        
-        const fullscreenTogglePlayPause = () => {
-            togglePlayPause();
         };
         
         const fullscreenSeek = () => {
@@ -1037,9 +1101,10 @@ createApp({
             const target = event.target;
             const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
             if (isInput) return;
+            // 空格键改为下一曲（因为播放/暂停已删除）
             if (event.code === 'Space') {
                 event.preventDefault();
-                togglePlayPause();
+                playNext();
             }
         };
         
@@ -1082,6 +1147,14 @@ createApp({
                 if (confirmBtn) confirmBtn.onclick = closeFeedbackModal;
                 feedbackModal.onclick = (e) => { if (e.target === feedbackModal) closeFeedbackModal(); };
             }
+            const myPlaylistsModal = document.getElementById('myPlaylistsModal');
+            if (myPlaylistsModal) {
+                const closeBtn = document.getElementById('closeMyPlaylistsBtn');
+                const confirmBtn = document.getElementById('confirmMyPlaylistsBtn');
+                if (closeBtn) closeBtn.onclick = closeMyPlaylistsModal;
+                if (confirmBtn) confirmBtn.onclick = closeMyPlaylistsModal;
+                myPlaylistsModal.onclick = (e) => { if (e.target === myPlaylistsModal) closeMyPlaylistsModal(); };
+            }
         };
         
         onMounted(() => {
@@ -1105,19 +1178,21 @@ createApp({
             isPlaying, currentTime, duration, progressValue, volumeValue,
             lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
             formatDuration, formatTime, searchSongs, parseById, playSongById,
-            togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
+            stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
             onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks: onDefaultPlaylistClick, loadCustomPlaylist,
             handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
             openFullscreenPlayer, closeFullscreenPlayer,
             fullscreenCover, fullscreenSongName, fullscreenArtist,
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
             fullscreenDuration, fullscreenProgressValue, fullscreenIsPlaying,
-            fullscreenTogglePlayPause, fullscreenSeek,
+            fullscreenSeek,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
             bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, bodyBackgroundStyle,
             saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveMaskOpacity,
-            openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal
+            openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal,
+            userCookie, userPlaylists, playlistLoading, playlistError,
+            openMyPlaylistsModal, closeMyPlaylistsModal, fetchUserPlaylists, selectUserPlaylist
         };
     }
 }).mount('#app');
