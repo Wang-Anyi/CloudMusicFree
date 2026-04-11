@@ -1,0 +1,331 @@
+const { createApp, ref, onMounted, nextTick } = Vue;
+
+createApp({
+    setup() {
+        // ---------- 响应式数据 ----------
+        const searchKeyword = ref('');
+        const songIdInput = ref('');
+        const searchResults = ref([]);
+        const loadingSearch = ref(false);
+        const searchPerformed = ref(false);
+        
+        // 播放相关
+        const currentSongName = ref('');
+        const currentArtist = ref('');
+        const currentCover = ref('');
+        const loadingPlay = ref(false);
+        const playErrorMsg = ref('');
+        const audioPlayer = ref(null);
+        let currentAudioSrc = '';
+        
+        // 增强控制
+        const isPlaying = ref(false);
+        const currentTime = ref(0);
+        const duration = ref(0);
+        const progressValue = ref(0);
+        const volumeValue = ref(0.7);
+        
+        // 歌词相关
+        const lyricsLines = ref([]);
+        const currentLyricIndex = ref(-1);
+        const lyricsContainer = ref(null);
+        
+        // 播放历史 (最多8首)
+        const playHistory = ref([]);
+        
+        // 推荐歌单
+        const recommendPlaylists = ref([]);
+        
+        // ---------- 辅助函数 ----------
+        const formatArtists = (artists) => {
+            if (!artists) return '未知歌手';
+            if (Array.isArray(artists)) return artists.map(a => a.name).join(' / ');
+            if (typeof artists === 'string') return artists;
+            return '网易云音乐人';
+        };
+        
+        const formatDuration = (ms) => {
+            if (!ms) return '00:00';
+            const sec = Math.floor(ms / 1000);
+            const mins = Math.floor(sec / 60);
+            const secs = sec % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        };
+        
+        const formatTime = (seconds) => {
+            if (isNaN(seconds)) return '00:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        };
+        
+        const extractSongId = (input) => {
+            if (!input) return null;
+            if (/^\d+$/.test(input.trim())) return input.trim();
+            const match = input.match(/[?&]id=(\d+)/);
+            if (match && match[1]) return match[1];
+            const match2 = input.match(/\/song\/(\d+)/);
+            return match2 ? match2[1] : null;
+        };
+        
+        // 添加播放历史
+        const addToHistory = (id, name, artist, cover) => {
+            const existing = playHistory.value.find(item => item.id === id);
+            if (!existing) {
+                playHistory.value.unshift({ id, name, artist, cover });
+                if (playHistory.value.length > 8) playHistory.value.pop();
+            }
+        };
+        
+        // 加载歌词
+        const fetchLyrics = async (songId, songName) => {
+            try {
+                const res = await axios.get(`https://api.injahow.cn/lyric?type=netease&id=${songId}`, { timeout: 8000 });
+                if (res.data && res.data.code === 200 && res.data.lrc) {
+                    const rawLyric = res.data.lrc.lyric;
+                    if (!rawLyric) {
+                        lyricsLines.value = [];
+                        return;
+                    }
+                    // 解析LRC
+                    const lines = rawLyric.split('\n');
+                    const parsed = [];
+                    const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+                    for (let line of lines) {
+                        const match = line.match(timeRegex);
+                        if (match) {
+                            const minutes = parseInt(match[1]);
+                            const seconds = parseInt(match[2]);
+                            const millis = parseInt(match[3].padEnd(3, '0'));
+                            const time = minutes * 60 + seconds + millis / 1000;
+                            const text = line.replace(timeRegex, '').trim();
+                            if (text) parsed.push({ time, text });
+                        } else if (line.trim()) {
+                            // 无时间戳的当作普通文本
+                            parsed.push({ time: -1, text: line.trim() });
+                        }
+                    }
+                    parsed.sort((a,b) => a.time - b.time);
+                    lyricsLines.value = parsed;
+                } else {
+                    lyricsLines.value = [];
+                }
+            } catch (e) {
+                console.warn('歌词加载失败', e);
+                lyricsLines.value = [];
+            }
+        };
+        
+        // 更新歌词高亮
+        const updateLyrics = (currentSec) => {
+            if (!lyricsLines.value.length) return;
+            let idx = -1;
+            for (let i = 0; i < lyricsLines.value.length; i++) {
+                const line = lyricsLines.value[i];
+                if (line.time >= 0 && currentSec >= line.time) {
+                    idx = i;
+                } else if (line.time > currentSec) {
+                    break;
+                }
+            }
+            if (idx !== currentLyricIndex.value) {
+                currentLyricIndex.value = idx;
+                // 自动滚动
+                if (idx >= 0 && lyricsContainer.value) {
+                    const activeEl = lyricsContainer.value.querySelector('.lyric-line.active');
+                    if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        };
+        
+        // 核心播放函数
+        const playSongById = async (songId, songName, artistRaw, coverUrl) => {
+            if (!songId) return;
+            loadingPlay.value = true;
+            playErrorMsg.value = '';
+            try {
+                const apiUrl = `https://api.injahow.cn/music?type=netease&id=${songId}`;
+                const resp = await axios.get(apiUrl, { timeout: 15000 });
+                if (resp.data && resp.data.code === 200 && resp.data.url) {
+                    const musicUrl = resp.data.url;
+                    currentSongName.value = songName || '未知歌曲';
+                    const artistName = formatArtists(artistRaw);
+                    currentArtist.value = artistName;
+                    currentCover.value = coverUrl || resp.data.info?.picUrl || '';
+                    addToHistory(songId, songName, artistName, currentCover.value);
+                    
+                    // 设置音频
+                    const audio = audioPlayer.value;
+                    if (audio) {
+                        audio.src = musicUrl;
+                        currentAudioSrc = musicUrl;
+                        audio.volume = volumeValue.value;
+                        await audio.play();
+                        isPlaying.value = true;
+                    }
+                    // 加载歌词
+                    fetchLyrics(songId, songName);
+                } else {
+                    throw new Error(resp.data?.msg || '无法解析，可能为VIP歌曲');
+                }
+            } catch (err) {
+                playErrorMsg.value = err.message || '网络错误，请重试';
+                console.error(err);
+            } finally {
+                loadingPlay.value = false;
+            }
+        };
+        
+        // 搜索歌曲
+        const searchSongs = async () => {
+            const keyword = searchKeyword.value.trim();
+            if (!keyword) return alert('请输入歌名或歌手');
+            loadingSearch.value = true;
+            searchPerformed.value = true;
+            try {
+                const url = `https://api.injahow.cn/search?type=netease&keyword=${encodeURIComponent(keyword)}`;
+                const res = await axios.get(url, { timeout: 12000 });
+                if (res.data && res.data.code === 200 && res.data.data) {
+                    searchResults.value = res.data.data.map(item => ({
+                        id: String(item.id),
+                        name: item.name,
+                        artists: item.artists || [{ name: item.artist || '未知' }],
+                        duration: item.duration || 0,
+                        picUrl: item.album?.picUrl || item.picUrl || '',
+                        paid: false
+                    }));
+                } else {
+                    searchResults.value = [];
+                }
+            } catch (e) {
+                searchResults.value = [];
+                playErrorMsg.value = '搜索失败';
+            } finally {
+                loadingSearch.value = false;
+            }
+        };
+        
+        const parseById = () => {
+            const id = extractSongId(songIdInput.value);
+            if (!id) return alert('请输入正确的歌曲ID或链接');
+            playSongById(id, `歌曲ID:${id}`, '网易云音乐', '');
+        };
+        
+        // 加载热门歌单 (预置几个官方歌单ID)
+        const loadPlaylists = async () => {
+            const playlistIds = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
+            const randomIds = playlistIds.sort(() => 0.5 - Math.random()).slice(0, 4);
+            const plist = [];
+            for (let pid of randomIds) {
+                try {
+                    const res = await axios.get(`https://api.injahow.cn/playlist?type=netease&id=${pid}`, { timeout: 8000 });
+                    if (res.data && res.data.code === 200 && res.data.playlist) {
+                        const pl = res.data.playlist;
+                        plist.push({
+                            id: pl.id,
+                            name: pl.name,
+                            coverImgUrl: pl.coverImgUrl,
+                            trackCount: pl.trackCount
+                        });
+                    }
+                } catch(e) { console.warn(e); }
+            }
+            if (plist.length) recommendPlaylists.value = plist;
+            else {
+                // fallback 默认歌单
+                recommendPlaylists.value = [
+                    { id: '3778678', name: '热歌榜', coverImgUrl: 'https://picsum.photos/80/80?random=1', trackCount: 100 },
+                    { id: '19723756', name: '欧美流行', coverImgUrl: 'https://picsum.photos/80/80?random=2', trackCount: 50 }
+                ];
+            }
+        };
+        
+        // 获取歌单歌曲并播放第一首或展示搜索结果
+        const fetchPlaylistTracks = async (playlistId, plName) => {
+            loadingSearch.value = true;
+            try {
+                const res = await axios.get(`https://api.injahow.cn/playlist?type=netease&id=${playlistId}`, { timeout: 10000 });
+                if (res.data && res.data.code === 200 && res.data.playlist && res.data.playlist.tracks) {
+                    const tracks = res.data.playlist.tracks.slice(0, 20);
+                    searchResults.value = tracks.map(track => ({
+                        id: String(track.id),
+                        name: track.name,
+                        artists: track.ar || [{ name: track.artist || '未知' }],
+                        duration: track.dt || 0,
+                        picUrl: track.al?.picUrl || '',
+                        paid: false
+                    }));
+                    searchPerformed.value = true;
+                    playErrorMsg.value = `✅ 已加载歌单: ${plName}`;
+                } else {
+                    searchResults.value = [];
+                    playErrorMsg.value = '歌单加载失败';
+                }
+            } catch (e) {
+                searchResults.value = [];
+                playErrorMsg.value = '歌单接口异常';
+            } finally {
+                loadingSearch.value = false;
+            }
+        };
+        
+        // ---------- 播放器控制 ----------
+        const togglePlayPause = () => {
+            const audio = audioPlayer.value;
+            if (!audio || !audio.src) return;
+            if (audio.paused) {
+                audio.play();
+                isPlaying.value = true;
+            } else {
+                audio.pause();
+                isPlaying.value = false;
+            }
+        };
+        const stopAudio = () => {
+            const audio = audioPlayer.value;
+            if (audio) { audio.pause(); audio.currentTime = 0; isPlaying.value = false; }
+        };
+        const updateProgress = () => {
+            const audio = audioPlayer.value;
+            if (audio && audio.duration) {
+                currentTime.value = audio.currentTime;
+                progressValue.value = (audio.currentTime / audio.duration) * 100;
+                updateLyrics(audio.currentTime);
+            }
+        };
+        const onLoadedMetadata = () => {
+            const audio = audioPlayer.value;
+            if (audio) {
+                duration.value = audio.duration;
+                audio.volume = volumeValue.value;
+            }
+        };
+        const seekAudio = () => {
+            const audio = audioPlayer.value;
+            if (audio && duration.value) {
+                audio.currentTime = (progressValue.value / 100) * duration.value;
+            }
+        };
+        const changeVolume = () => {
+            const audio = audioPlayer.value;
+            if (audio) audio.volume = volumeValue.value;
+        };
+        const onAudioEnded = () => { isPlaying.value = false; };
+        const onAudioError = () => { playErrorMsg.value = '播放失败，可能是版权限制'; isPlaying.value = false; };
+        
+        // 初始化加载歌单
+        onMounted(() => {
+            loadPlaylists();
+        });
+        
+        return {
+            searchKeyword, songIdInput, searchResults, loadingSearch, searchPerformed,
+            currentSongName, currentArtist, currentCover, loadingPlay, playErrorMsg, audioPlayer,
+            isPlaying, currentTime, duration, progressValue, volumeValue,
+            lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
+            formatArtists, formatDuration, formatTime, searchSongs, parseById, playSongById,
+            togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
+            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks
+        };
+    }
+}).mount('#app');
