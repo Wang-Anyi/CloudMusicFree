@@ -46,7 +46,7 @@ createApp({
         const fullscreenIsPlaying = ref(false);
         let fullscreenInterval = null;
         
-        // 当前主题（默认为 theme-default）
+        // 当前主题
         const currentTheme = ref('theme-default');
         
         // ========== API 列表 ==========
@@ -237,6 +237,56 @@ createApp({
             throw lastError || new Error('所有 API 均不可用');
         };
         
+        // ---------- 通过歌曲 ID 获取真实封面 ----------
+        const fetchRealCover = async (songId) => {
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                try {
+                    const res = await axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 5000 });
+                    let detail = null;
+                    if (res.data && res.data.songs && res.data.songs[0]) {
+                        detail = res.data.songs[0];
+                    } else if (res.data && res.data.data && res.data.data[0]) {
+                        detail = res.data.data[0];
+                    }
+                    if (detail) {
+                        const coverUrl = detail.al?.picUrl || detail.album?.picUrl || detail.cover || detail.picUrl;
+                        if (coverUrl && coverUrl.startsWith('http')) {
+                            return toHttps(coverUrl);
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`获取封面失败 ${apiBase}:`, e.message);
+                }
+            }
+            return null;
+        };
+        
+        // ---------- 图片加载失败处理（核心修复）----------
+        const handleImageError = async (event, songId) => {
+            const img = event.target;
+            if (img.getAttribute('data-retrying') === 'true') return;
+            img.setAttribute('data-retrying', 'true');
+            
+            const realCover = await fetchRealCover(songId);
+            if (realCover) {
+                // 测试图片是否真的可加载
+                const testImg = new Image();
+                testImg.onload = () => {
+                    img.src = realCover;
+                    img.setAttribute('data-retrying', 'false');
+                };
+                testImg.onerror = () => {
+                    img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                    img.setAttribute('data-retrying', 'false');
+                };
+                testImg.src = realCover;
+            } else {
+                img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                img.setAttribute('data-retrying', 'false');
+            }
+        };
+        
         // ---------- 搜索函数 ----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
@@ -298,13 +348,6 @@ createApp({
             }
             searchResults.value = results;
             loadingSearch.value = false;
-        };
-        
-        // ---------- 图片错误处理 ----------
-        const handleImageError = (event) => {
-            const img = event.target;
-            if (img.src.includes('cdn-icons-png.flaticon.com')) return;
-            img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
         };
         
         // ---------- 获取播放地址 ----------
@@ -722,12 +765,11 @@ createApp({
             playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.cover);
         };
         
-        // ---------- 空格键控制播放/暂停 ----------
+        // ---------- 空格键控制 ----------
         const handleKeydown = (event) => {
             const target = event.target;
             const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
             if (isInput) return;
-            
             if (event.code === 'Space') {
                 event.preventDefault();
                 togglePlayPause();
