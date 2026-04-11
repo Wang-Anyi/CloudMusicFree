@@ -86,7 +86,7 @@ createApp({
             return url.replace(/^http:\/\//i, 'https://');
         };
         
-        // 统一提取封面函数（与歌单逻辑一致）
+        // 统一提取封面函数
         const extractCover = (item) => {
             return item.al?.picUrl || item.album?.picUrl || item.cover || item.picUrl || '';
         };
@@ -271,31 +271,30 @@ createApp({
             return null;
         };
         
-        // ---------- 图片加载失败处理（备用）----------
-        const handleImageError = async (event, songId) => {
-            const img = event.target;
-            if (img.getAttribute('data-retrying') === 'true') return;
-            img.setAttribute('data-retrying', 'true');
-            
-            const realCover = await fetchRealCover(songId);
-            if (realCover) {
-                const testImg = new Image();
-                testImg.onload = () => {
-                    img.src = realCover;
-                    img.setAttribute('data-retrying', 'false');
-                };
-                testImg.onerror = () => {
-                    img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                    img.setAttribute('data-retrying', 'false');
-                };
-                testImg.src = realCover;
-            } else {
-                img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                img.setAttribute('data-retrying', 'false');
+        // ---------- 图片加载成功，隐藏加载指示器 ----------
+        const onImageLoad = (event, songId) => {
+            const wrapper = event.target.closest('.cover-wrapper');
+            if (wrapper) {
+                const loadingDiv = wrapper.querySelector('.cover-loading');
+                if (loadingDiv) loadingDiv.style.display = 'none';
             }
         };
         
-        // ---------- 搜索函数（主动获取真实封面）----------
+        // ---------- 图片加载失败，替换为默认图片并隐藏加载指示器 ----------
+        const onImageError = (event, songId) => {
+            const img = event.target;
+            const wrapper = img.closest('.cover-wrapper');
+            if (wrapper) {
+                const loadingDiv = wrapper.querySelector('.cover-loading');
+                if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+            // 如果当前图片不是默认图片，尝试替换为默认图片
+            if (!img.src.includes('cdn-icons-png.flaticon.com')) {
+                img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+            }
+        };
+        
+        // ---------- 搜索函数（主动获取真实封面，并初始化加载指示器）----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -331,7 +330,7 @@ createApp({
                 return;
             }
             
-            // 2. 构建临时结果（先用默认封面占位）
+            // 2. 构建临时结果（使用默认封面，loadingCover 为 true）
             const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             const tempResults = songsData.map(item => {
                 const id = item.id || item.song_id;
@@ -340,7 +339,6 @@ createApp({
                 const duration = item.duration || item.dt || 0;
                 const fee = item.fee || 0;
                 const isVip = (fee === 1 || fee === 4);
-                // 不直接使用搜索返回的封面，全部先置为默认图，后面统一获取真实封面
                 return {
                     id: String(id),
                     name: name,
@@ -348,28 +346,30 @@ createApp({
                     duration: duration,
                     picUrl: defaultCover,
                     isVip: isVip,
-                    // 保存原始数据以便后续可能的扩展
-                    _raw: item
+                    loadingCover: true   // 显示加载指示器
                 };
             });
             
-            // 立即显示临时结果（用户看到默认图，随后逐步替换）
             searchResults.value = tempResults;
             
-            // 3. 并发获取每个歌曲的真实封面（限制并发数，避免过多请求）
+            // 3. 并发获取每个歌曲的真实封面
             const coverPromises = tempResults.map(async (song, index) => {
                 try {
                     const realCover = await fetchRealCover(song.id);
                     if (realCover) {
-                        // 更新结果数组中对应项的 picUrl
+                        // 更新图片 URL 并保留 loading 状态（等图片真正加载完成后隐藏）
                         searchResults.value[index].picUrl = realCover;
+                        // 注意：loadingCover 先保留 true，等图片的 load 事件触发后再隐藏
+                    } else {
+                        // 没有找到真实封面，标记加载完成（显示默认图）
+                        searchResults.value[index].loadingCover = false;
                     }
                 } catch (e) {
                     console.warn(`获取歌曲 ${song.id} 封面失败:`, e);
+                    searchResults.value[index].loadingCover = false;
                 }
             });
             
-            // 等待所有封面获取完成（不阻塞用户交互，但确保最终显示真实封面）
             await Promise.allSettled(coverPromises);
             loadingSearch.value = false;
         };
@@ -613,7 +613,8 @@ createApp({
                             artist: track.ar.map(a => a.name).join('/'),
                             duration: track.dt,
                             picUrl: picUrl,
-                            isVip: isVip
+                            isVip: isVip,
+                            loadingCover: false   // 歌单图片通常直接有效，不显示加载指示器
                         };
                     });
                     playErrorMsg.value = `✅ 已加载歌单: ${plName}`;
@@ -849,7 +850,7 @@ createApp({
             formatDuration, formatTime, searchSongs, parseById, playSongById,
             togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
             onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks,
-            handlePlayClick, downloadCurrentSong, handleImageError,
+            handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
             openFullscreenPlayer, closeFullscreenPlayer,
             fullscreenCover, fullscreenSongName, fullscreenArtist,
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
