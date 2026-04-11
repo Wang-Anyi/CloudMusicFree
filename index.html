@@ -277,7 +277,7 @@
                     <div class="settings-desc">粘贴您的网易云 Cookie（包含 MUSIC_U）</div>
                     <textarea v-model="userCookie" rows="3" class="settings-input" placeholder="MUSIC_U=xxxxx; ..."></textarea>
                     <div class="settings-buttons">
-                        <button class="btn btn-outline" @click="fetchUserPlaylists">获取我的歌单</button>
+                        <button class="btn btn-outline" @click="fetchUserPlaylists">📥 获取所有歌单</button>
                     </div>
                     <div v-if="playlistLoading" class="loading-tip">⏳ 加载中...</div>
                     <div v-if="playlistError" class="error-msg">{{ playlistError }}</div>
@@ -293,7 +293,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="modal-btn confirm" @click="closeMyPlaylistsModal">关闭</button>
+                <button class="modal-btn confirm" id="confirmMyPlaylistsBtn">关闭</button>
             </div>
         </div>
     </div>
