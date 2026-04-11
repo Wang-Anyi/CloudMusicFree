@@ -236,12 +236,15 @@ createApp({
             throw lastError || new Error('所有 API 均不可用');
         };
         
-        // ---------- 搜索函数（快速返回，封面后续修复）----------
+        // ---------- 搜索函数（清空列表 + 显示加载状态）----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
-            loadingSearch.value = true;
+            
+            // 清空之前的搜索结果，显示加载状态
+            searchResults.value = [];
             searchPerformed.value = true;
+            loadingSearch.value = true;
             
             let songsData = null;
             for (let i = 0; i < API_LIST.length; i++) {
@@ -270,6 +273,7 @@ createApp({
             }
             
             const results = [];
+            const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             for (let item of songsData) {
                 const id = item.id || item.song_id;
                 const name = item.name || item.title;
@@ -277,10 +281,13 @@ createApp({
                 const duration = item.duration || item.dt || 0;
                 const fee = item.fee || 0;
                 const isVip = (fee === 1 || fee === 4);
-                // 提取原始封面（可能无效，但先使用，后面由 @error 修复）
+                // 提取原始封面（可能无效，但先使用，加载失败时由 @error 替换为默认图）
                 let picUrl = item.picUrl || item.cover || item.album?.picUrl || '';
-                if (picUrl) picUrl = toHttps(picUrl);
-                else picUrl = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                if (picUrl && picUrl.startsWith('http')) {
+                    picUrl = toHttps(picUrl);
+                } else {
+                    picUrl = defaultCover;
+                }
                 results.push({
                     id: String(id),
                     name: name,
@@ -294,44 +301,11 @@ createApp({
             loadingSearch.value = false;
         };
         
-        // ---------- 图片加载失败时，尝试从其他 API 获取真实封面 ----------
-        const handleImageError = async (event, songId) => {
+        // ---------- 图片加载失败时替换为默认图片 ----------
+        const handleImageError = (event) => {
             const img = event.target;
-            if (img.getAttribute('data-retrying') === 'true') return;
-            img.setAttribute('data-retrying', 'true');
-            
-            for (let i = 0; i < API_LIST.length; i++) {
-                const apiBase = API_LIST[i];
-                try {
-                    const res = await axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 5000 });
-                    let detail = null;
-                    if (res.data && res.data.songs && res.data.songs[0]) {
-                        detail = res.data.songs[0];
-                    } else if (res.data && res.data.data && res.data.data[0]) {
-                        detail = res.data.data[0];
-                    }
-                    if (detail) {
-                        const coverUrl = detail.al?.picUrl || detail.album?.picUrl || detail.cover || detail.picUrl;
-                        if (coverUrl && coverUrl.startsWith('http')) {
-                            const httpsUrl = toHttps(coverUrl);
-                            // 测试图片是否可用
-                            const testImg = new Image();
-                            testImg.onload = () => {
-                                img.src = httpsUrl;
-                                img.setAttribute('data-retrying', 'false');
-                            };
-                            testImg.onerror = () => {
-                                console.warn(`备用封面也无法加载: ${httpsUrl}`);
-                                img.setAttribute('data-retrying', 'false');
-                            };
-                            testImg.src = httpsUrl;
-                            return;
-                        }
-                    }
-                } catch(e) { console.warn(e); }
-            }
-            // 所有尝试失败，保持默认图片
-            img.setAttribute('data-retrying', 'false');
+            if (img.src.includes('cdn-icons-png.flaticon.com')) return; // 已经是默认图，避免无限循环
+            img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
         };
         
         // ---------- 获取播放地址 ----------
