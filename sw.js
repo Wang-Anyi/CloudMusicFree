@@ -12,7 +12,9 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(urlsToCache))
+      .catch(err => console.warn('缓存失败', err))
   );
+  self.skipWaiting();
 });
 
 self.addEventListener('fetch', event => {
@@ -20,15 +22,17 @@ self.addEventListener('fetch', event => {
     caches.match(event.request)
       .then(response => {
         if (response) return response;
-        return fetch(event.request).then(networkResponse => {
-          if (event.request.method === 'GET' && networkResponse.ok) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, responseClone);
-            });
+        return fetch(event.request).then(
+          networkResponse => {
+            if (event.request.method === 'GET' && networkResponse.ok) {
+              const responseClone = networkResponse.clone();
+              caches.open(CACHE_NAME).then(cache => {
+                cache.put(event.request, responseClone);
+              });
+            }
+            return networkResponse;
           }
-          return networkResponse;
-        });
+        );
       })
   );
 });
@@ -45,4 +49,5 @@ self.addEventListener('activate', event => {
       );
     })
   );
+  self.clients.claim();
 });
