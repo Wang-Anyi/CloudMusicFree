@@ -271,7 +271,7 @@ createApp({
             return null;
         };
         
-        // ---------- 图片加载成功，隐藏加载指示器 ----------
+        // ---------- 图片加载成功 ----------
         const onImageLoad = (event, songId) => {
             const wrapper = event.target.closest('.cover-wrapper');
             if (wrapper) {
@@ -280,7 +280,7 @@ createApp({
             }
         };
         
-        // ---------- 图片加载失败，替换为默认图片并隐藏加载指示器 ----------
+        // ---------- 图片加载失败 ----------
         const onImageError = (event, songId) => {
             const img = event.target;
             const wrapper = img.closest('.cover-wrapper');
@@ -288,13 +288,12 @@ createApp({
                 const loadingDiv = wrapper.querySelector('.cover-loading');
                 if (loadingDiv) loadingDiv.style.display = 'none';
             }
-            // 如果当前图片不是默认图片，尝试替换为默认图片
             if (!img.src.includes('cdn-icons-png.flaticon.com')) {
                 img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             }
         };
         
-        // ---------- 搜索函数（主动获取真实封面，并初始化加载指示器）----------
+        // ---------- 搜索函数 ----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -303,7 +302,6 @@ createApp({
             searchPerformed.value = true;
             loadingSearch.value = true;
             
-            // 1. 获取搜索结果列表
             let songsData = null;
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[i];
@@ -330,7 +328,6 @@ createApp({
                 return;
             }
             
-            // 2. 构建临时结果（使用默认封面，loadingCover 为 true）
             const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             const tempResults = songsData.map(item => {
                 const id = item.id || item.song_id;
@@ -346,22 +343,17 @@ createApp({
                     duration: duration,
                     picUrl: defaultCover,
                     isVip: isVip,
-                    loadingCover: true   // 显示加载指示器
+                    loadingCover: true
                 };
             });
-            
             searchResults.value = tempResults;
             
-            // 3. 并发获取每个歌曲的真实封面
             const coverPromises = tempResults.map(async (song, index) => {
                 try {
                     const realCover = await fetchRealCover(song.id);
                     if (realCover) {
-                        // 更新图片 URL 并保留 loading 状态（等图片真正加载完成后隐藏）
                         searchResults.value[index].picUrl = realCover;
-                        // 注意：loadingCover 先保留 true，等图片的 load 事件触发后再隐藏
                     } else {
-                        // 没有找到真实封面，标记加载完成（显示默认图）
                         searchResults.value[index].loadingCover = false;
                     }
                 } catch (e) {
@@ -369,7 +361,6 @@ createApp({
                     searchResults.value[index].loadingCover = false;
                 }
             });
-            
             await Promise.allSettled(coverPromises);
             loadingSearch.value = false;
         };
@@ -468,7 +459,7 @@ createApp({
             }
         };
         
-        // ---------- 下载当前歌曲 ----------
+        // ---------- 下载当前歌曲（嵌入封面图片）----------
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src || audio.src === '') {
@@ -481,25 +472,70 @@ createApp({
                 setTimeout(() => { if (playErrorMsg.value === 'VIP歌曲暂不支持下载，请支持正版') playErrorMsg.value = ''; }, 2000);
                 return;
             }
+            
             try {
+                // 显示下载中提示
+                playErrorMsg.value = '⏳ 正在准备下载（含封面）...';
+                
+                // 1. 获取音频文件 ArrayBuffer
                 const musicUrl = audio.src;
-                const ext = musicUrl.split('?')[0].match(/\.([a-zA-Z0-9]+)$/)?.[1] || 'mp3';
-                const fileName = `${currentSongArtist || '未知艺术家'} - ${currentSongName.value || '未知歌曲'}.${ext}`;
-                const response = await fetch(musicUrl);
-                const blob = await response.blob();
+                const audioResponse = await fetch(musicUrl);
+                if (!audioResponse.ok) throw new Error('音频获取失败');
+                const audioBuffer = await audioResponse.arrayBuffer();
+                
+                // 2. 获取封面图片 ArrayBuffer
+                let coverBuffer = null;
+                const coverUrl = currentCover.value;
+                if (coverUrl && coverUrl !== 'https://cdn-icons-png.flaticon.com/512/727/727245.png') {
+                    try {
+                        const imgResponse = await fetch(coverUrl);
+                        if (imgResponse.ok) {
+                            coverBuffer = await imgResponse.arrayBuffer();
+                        }
+                    } catch (e) {
+                        console.warn('获取封面图片失败，将不嵌入封面', e);
+                    }
+                }
+                
+                // 3. 使用 browser-id3-writer 创建带封面的 MP3 Blob
+                const writer = new window.ID3Writer(audioBuffer);
+                // 设置基本标签
+                writer.setFrame('TIT2', currentSongName.value || '未知歌曲')
+                      .setFrame('TPE1', [currentArtist.value || '未知艺术家'])
+                      .setFrame('TALB', '云音匣下载')
+                      .setFrame('TYER', new Date().getFullYear().toString())
+                      .setFrame('TCON', '流行');
+                // 嵌入封面图片
+                if (coverBuffer) {
+                    const coverType = coverUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
+                    writer.setFrame('APIC', {
+                        type: 3,
+                        data: coverBuffer,
+                        description: 'Cover',
+                        mime: coverType
+                    });
+                }
+                writer.addTag();
+                const taggedBuffer = writer.arrayBuffer;
+                
+                // 4. 创建下载链接
+                const blob = new Blob([taggedBuffer], { type: 'audio/mpeg' });
+                const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
+                const fileName = `${currentArtist.value || '未知艺术家'} - ${currentSongName.value || '未知歌曲'}.mp3`;
+                link.href = url;
                 link.download = fileName;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                URL.revokeObjectURL(link.href);
-                playErrorMsg.value = `✅ 已下载: ${fileName}`;
-                setTimeout(() => { if (playErrorMsg.value === `✅ 已下载: ${fileName}`) playErrorMsg.value = ''; }, 3000);
+                URL.revokeObjectURL(url);
+                
+                playErrorMsg.value = `✅ 已下载（含封面）: ${fileName}`;
+                setTimeout(() => { if (playErrorMsg.value === `✅ 已下载（含封面）: ${fileName}`) playErrorMsg.value = ''; }, 3000);
             } catch (err) {
                 console.error('下载失败:', err);
-                playErrorMsg.value = '下载失败，可能是跨域限制';
-                setTimeout(() => { if (playErrorMsg.value === '下载失败，可能是跨域限制') playErrorMsg.value = ''; }, 2000);
+                playErrorMsg.value = '下载失败，可能是网络或跨域限制，请重试';
+                setTimeout(() => { if (playErrorMsg.value === '下载失败，可能是网络或跨域限制，请重试') playErrorMsg.value = ''; }, 3000);
             }
         };
         
@@ -614,7 +650,7 @@ createApp({
                             duration: track.dt,
                             picUrl: picUrl,
                             isVip: isVip,
-                            loadingCover: false   // 歌单图片通常直接有效，不显示加载指示器
+                            loadingCover: false
                         };
                     });
                     playErrorMsg.value = `✅ 已加载歌单: ${plName}`;
