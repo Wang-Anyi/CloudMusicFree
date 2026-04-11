@@ -1,4 +1,4 @@
-/* ========== 基础变量（浅色模式默认） ========== */
+/* ========== 基础变量（默认暖色主题） ========== */
 :root {
     --bg-gradient-start: #f9f3e6;
     --bg-gradient-end: #e8e0d5;
@@ -20,7 +20,8 @@
     --ctrl-btn-color: #4f2a18;
 }
 
-body.dark-mode {
+/* 暗夜黑主题 */
+.theme-dark {
     --bg-gradient-start: #1a1a2e;
     --bg-gradient-end: #16213e;
     --container-bg: rgba(0, 0, 0, 0.75);
@@ -39,6 +40,72 @@ body.dark-mode {
     --progress-thumb: #ea8c5c;
     --ctrl-btn-bg: #3a3a4a;
     --ctrl-btn-color: #e0e0e0;
+}
+
+/* 海洋绿主题 */
+.theme-ocean {
+    --bg-gradient-start: #e0f2f1;
+    --bg-gradient-end: #b2dfdb;
+    --container-bg: rgba(255, 255, 255, 0.85);
+    --text-primary: #004d40;
+    --text-secondary: #00695c;
+    --card-bg: rgba(255, 255, 255, 0.6);
+    --player-card-bg: rgba(0, 77, 64, 0.9);
+    --lyrics-card-bg: rgba(224, 242, 241, 0.9);
+    --lyrics-text: #004d40;
+    --lyrics-active-bg: #b2dfdb;
+    --lyrics-active-color: #00796b;
+    --border-color: #b2dfdb;
+    --btn-bg: #00796b;
+    --btn-text: white;
+    --progress-bg: #80cbc4;
+    --progress-thumb: #00695c;
+    --ctrl-btn-bg: #b2dfdb;
+    --ctrl-btn-color: #004d40;
+}
+
+/* 梦幻紫主题 */
+.theme-purple {
+    --bg-gradient-start: #f3e5f5;
+    --bg-gradient-end: #e1bee7;
+    --container-bg: rgba(255, 255, 255, 0.85);
+    --text-primary: #4a148c;
+    --text-secondary: #6a1b9a;
+    --card-bg: rgba(255, 255, 255, 0.6);
+    --player-card-bg: rgba(74, 20, 140, 0.9);
+    --lyrics-card-bg: rgba(243, 229, 245, 0.9);
+    --lyrics-text: #4a148c;
+    --lyrics-active-bg: #e1bee7;
+    --lyrics-active-color: #8e24aa;
+    --border-color: #ce93d8;
+    --btn-bg: #8e24aa;
+    --btn-text: white;
+    --progress-bg: #ce93d8;
+    --progress-thumb: #ab47bc;
+    --ctrl-btn-bg: #e1bee7;
+    --ctrl-btn-color: #4a148c;
+}
+
+/* 日落橙主题 */
+.theme-sunset {
+    --bg-gradient-start: #fff3e0;
+    --bg-gradient-end: #ffe0b2;
+    --container-bg: rgba(255, 255, 255, 0.85);
+    --text-primary: #bf360c;
+    --text-secondary: #e65100;
+    --card-bg: rgba(255, 255, 255, 0.6);
+    --player-card-bg: rgba(191, 54, 12, 0.9);
+    --lyrics-card-bg: rgba(255, 243, 224, 0.9);
+    --lyrics-text: #bf360c;
+    --lyrics-active-bg: #ffe0b2;
+    --lyrics-active-color: #f57c00;
+    --border-color: #ffcc80;
+    --btn-bg: #f57c00;
+    --btn-text: white;
+    --progress-bg: #ffb74d;
+    --progress-thumb: #f57c00;
+    --ctrl-btn-bg: #ffe0b2;
+    --ctrl-btn-color: #bf360c;
 }
 
 * {
@@ -144,10 +211,19 @@ body {
     box-shadow: 0 2px 6px rgba(0,0,0,0.05);
     border: 1px solid var(--border-color);
 }
-body.dark-mode .search-input {
+.theme-dark .search-input,
+.theme-ocean .search-input,
+.theme-purple .search-input,
+.theme-sunset .search-input {
     background: #2a2a3a;
     color: #e0e0e0;
     border-color: #4a4a5a;
+}
+.theme-ocean .search-input,
+.theme-purple .search-input,
+.theme-sunset .search-input {
+    background: white;
+    color: inherit;
 }
 .search-input:focus {
     border-color: #ea8c5c;
@@ -167,11 +243,6 @@ body.dark-mode .search-input {
     border-radius: 40px;
     border: 1px solid var(--border-color);
     background: white;
-}
-body.dark-mode .small-input {
-    background: #2a2a3a;
-    color: #e0e0e0;
-    border-color: #4a4a5a;
 }
 .btn {
     border: none;
@@ -196,7 +267,7 @@ body.dark-mode .small-input {
     color: #b45a3b;
     border: 1px solid #e2c7b5;
 }
-body.dark-mode .btn-outline {
+.theme-dark .btn-outline {
     background: #3a3a4a;
     color: #ea8c5c;
     border-color: #ea8c5c;
@@ -222,9 +293,6 @@ body.dark-mode .btn-outline {
     border-radius: 40px;
     cursor: pointer;
     color: #a16242;
-}
-body.dark-mode .refresh-btn {
-    color: #ea8c5c;
 }
 .playlist-grid {
     display: grid;
@@ -290,8 +358,16 @@ body.dark-mode .refresh-btn {
     transition: 0.2s;
     border: 1px solid var(--border-color);
 }
-body.dark-mode .song-item {
+.theme-dark .song-item,
+.theme-ocean .song-item,
+.theme-purple .song-item,
+.theme-sunset .song-item {
     background: #2a2a3a;
+}
+.theme-ocean .song-item,
+.theme-purple .song-item,
+.theme-sunset .song-item {
+    background: white;
 }
 .song-item:hover {
     background: var(--lyrics-active-bg);
@@ -341,14 +417,6 @@ body.dark-mode .song-item {
     margin-left: 6px;
     font-weight: 500;
 }
-body.dark-mode .badge-free {
-    background: #2a5a2a;
-    color: #a0e0a0;
-}
-body.dark-mode .badge-vip {
-    background: #5a2a2a;
-    color: #f0a080;
-}
 .play-btn-small {
     background: #fae5d6;
     border: none;
@@ -362,11 +430,11 @@ body.dark-mode .badge-vip {
     background: #ea8c5c;
     color: white;
 }
-body.dark-mode .play-btn-small {
+.theme-dark .play-btn-small {
     background: #3a3a4a;
     color: #ea8c5c;
 }
-body.dark-mode .play-btn-small:hover {
+.theme-dark .play-btn-small:hover {
     background: #ea8c5c;
     color: white;
 }
@@ -566,7 +634,7 @@ body.dark-mode .play-btn-small:hover {
     background: rgba(0,0,0,0.3);
 }
 
-/* VIP 弹窗样式 */
+/* 模态框通用样式 */
 .modal {
     position: fixed;
     top: 0;
@@ -588,6 +656,9 @@ body.dark-mode .play-btn-small:hover {
     box-shadow: 0 20px 35px rgba(0,0,0,0.3);
     overflow: hidden;
     animation: modalFadeIn 0.2s ease;
+}
+.theme-modal-content {
+    max-width: 450px;
 }
 @keyframes modalFadeIn {
     from { opacity: 0; transform: scale(0.95); }
@@ -651,6 +722,49 @@ body.dark-mode .play-btn-small:hover {
 .modal-btn.confirm:hover {
     background: #b83b1f;
     transform: translateY(-1px);
+}
+
+/* 主题选择按钮 */
+.theme-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px;
+}
+.theme-btn {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 60px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    text-align: center;
+}
+.theme-default {
+    background: #f9f3e6;
+    color: #2d241e;
+    border: 1px solid #e2c7b5;
+}
+.theme-dark {
+    background: #1a1a2e;
+    color: #e0e0e0;
+}
+.theme-ocean {
+    background: #e0f2f1;
+    color: #004d40;
+}
+.theme-purple {
+    background: #f3e5f5;
+    color: #4a148c;
+}
+.theme-sunset {
+    background: #fff3e0;
+    color: #bf360c;
+}
+.theme-btn:hover {
+    transform: scale(1.02);
+    filter: brightness(0.95);
 }
 
 /* 全屏播放器样式 */
