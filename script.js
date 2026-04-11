@@ -36,11 +36,14 @@ createApp({
         // 推荐歌单
         const recommendPlaylists = ref([]);
         
+        // 当前播放歌曲的 VIP 状态（用于下载按钮判断）
+        const currentIsVip = ref(false);
+        
         // API 地址（请替换为你的实际地址）
         const API_BASE = 'https://api-enhanced-wine-tau.vercel.app';
         
         // 弹窗相关
-        let pendingVipSong = null;  // 暂存 VIP 歌曲信息
+        let pendingVipSong = null;
         
         // ---------- 辅助函数 ----------
         const formatDuration = (ms) => {
@@ -140,6 +143,7 @@ createApp({
                     currentSongName.value = songName || '未知歌曲';
                     currentArtist.value = artistName || '网易云音乐';
                     currentCover.value = coverUrl || '';
+                    currentIsVip.value = false;   // 免费歌曲
                     addToHistory(songId, songName, currentArtist.value, currentCover.value);
                     
                     const audio = audioPlayer.value;
@@ -157,6 +161,7 @@ createApp({
             } catch (err) {
                 playErrorMsg.value = err.message || '网络错误，请重试';
                 console.error(err);
+                currentIsVip.value = false;
             } finally {
                 loadingPlay.value = false;
             }
@@ -191,6 +196,26 @@ createApp({
             }
         };
         
+        // 下载当前歌曲
+        const downloadCurrentSong = () => {
+            const audio = audioPlayer.value;
+            if (!audio || !audio.src || audio.src === '') {
+                playErrorMsg.value = '没有正在播放的歌曲';
+                setTimeout(() => { if (playErrorMsg.value === '没有正在播放的歌曲') playErrorMsg.value = ''; }, 2000);
+                return;
+            }
+            if (currentIsVip.value) {
+                playErrorMsg.value = 'VIP歌曲暂不支持下载，请支持正版';
+                setTimeout(() => { if (playErrorMsg.value === 'VIP歌曲暂不支持下载，请支持正版') playErrorMsg.value = ''; }, 2000);
+                return;
+            }
+            // 免费歌曲：打开链接并提示
+            const musicUrl = audio.src;
+            window.open(musicUrl, '_blank');
+            playErrorMsg.value = '✅ 已打开音频链接，可右键另存为';
+            setTimeout(() => { if (playErrorMsg.value === '✅ 已打开音频链接，可右键另存为') playErrorMsg.value = ''; }, 3000);
+        };
+        
         // 初始化弹窗事件绑定
         const initModalEvents = () => {
             const modal = document.getElementById('vipModal');
@@ -201,13 +226,12 @@ createApp({
             if (closeBtn) closeBtn.onclick = hideVipModal;
             if (cancelBtn) cancelBtn.onclick = hideVipModal;
             if (confirmBtn) confirmBtn.onclick = goToNetEase;
-            // 点击模态框背景关闭
             modal.onclick = (e) => {
                 if (e.target === modal) hideVipModal();
             };
         };
         
-        // ---------- 搜索歌曲（增加 VIP 识别） ----------
+        // ---------- 搜索歌曲（增加 VIP 识别）----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -217,9 +241,9 @@ createApp({
                 const res = await axios.get(`${API_BASE}/search?keywords=${encodeURIComponent(keyword)}&limit=30`, { timeout: 12000 });
                 if (res.data && res.data.result && res.data.result.songs) {
                     searchResults.value = res.data.result.songs.map(item => {
-                        // fee: 0=免费, 1=VIP, 4=付费专辑 (均视为VIP)
                         const fee = item.fee || 0;
-                        const isVip = fee !== 0;
+                        // 修正 VIP 判断：fee 为 1 或 4 才是 VIP
+                        const isVip = (fee === 1 || fee === 4);
                         return {
                             id: String(item.id),
                             name: item.name,
@@ -245,13 +269,12 @@ createApp({
         const parseById = async () => {
             const id = extractSongId(songIdInput.value);
             if (!id) return alert('请输入正确的歌曲ID或链接');
-            // 先通过搜索接口获取歌曲详情（判断 VIP）
             try {
                 const res = await axios.get(`${API_BASE}/song/detail?ids=${id}`, { timeout: 8000 });
                 if (res.data && res.data.songs && res.data.songs[0]) {
                     const songDetail = res.data.songs[0];
                     const fee = songDetail.fee || 0;
-                    const isVip = fee !== 0;
+                    const isVip = (fee === 1 || fee === 4);
                     const song = {
                         id: String(songDetail.id),
                         name: songDetail.name,
@@ -309,7 +332,7 @@ createApp({
                     const tracks = res.data.songs;
                     searchResults.value = tracks.map(track => {
                         const fee = track.fee || 0;
-                        const isVip = fee !== 0;
+                        const isVip = (fee === 1 || fee === 4);
                         return {
                             id: String(track.id),
                             name: track.name,
@@ -347,7 +370,12 @@ createApp({
         };
         const stopAudio = () => {
             const audio = audioPlayer.value;
-            if (audio) { audio.pause(); audio.currentTime = 0; isPlaying.value = false; }
+            if (audio) { 
+                audio.pause(); 
+                audio.currentTime = 0; 
+                isPlaying.value = false;
+                currentIsVip.value = false;
+            }
         };
         const updateProgress = () => {
             const audio = audioPlayer.value;
@@ -374,8 +402,15 @@ createApp({
             const audio = audioPlayer.value;
             if (audio) audio.volume = volumeValue.value;
         };
-        const onAudioEnded = () => { isPlaying.value = false; };
-        const onAudioError = () => { playErrorMsg.value = '播放失败，可能是版权限制或链接过期'; isPlaying.value = false; };
+        const onAudioEnded = () => { 
+            isPlaying.value = false;
+            currentIsVip.value = false;
+        };
+        const onAudioError = () => { 
+            playErrorMsg.value = '播放失败，可能是版权限制或链接过期'; 
+            isPlaying.value = false;
+            currentIsVip.value = false;
+        };
         
         onMounted(() => {
             loadPlaylists();
@@ -392,7 +427,7 @@ createApp({
             formatDuration, formatTime, searchSongs, parseById, playSongById,
             togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
             onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks,
-            handlePlayClick
+            handlePlayClick, downloadCurrentSong
         };
     }
 }).mount('#app');
