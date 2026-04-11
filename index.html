@@ -19,7 +19,10 @@
                 <h1>🎵 云音匣 · 免费听</h1>
                 <p>搜索歌曲 / ID解析 · 高品质在线播放 · 歌词同步 · 热门歌单</p>
             </div>
-            <button class="theme-toggle" @click="openThemeModal">🎨 主题</button>
+            <div class="header-right">
+                <button class="theme-toggle" @click="openThemeModal">🎨 主题</button>
+                <button class="settings-btn" @click="openSettingsModal">⚙️ 设置</button>
+            </div>
         </div>
 
         <div class="main-grid">
@@ -144,7 +147,7 @@
         </div>
     </div>
 
-    <!-- 全屏播放器（完全占满浏览器视口） -->
+    <!-- 全屏播放器 -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -200,6 +203,36 @@
                 <button class="theme-btn theme-ocean" @click="setTheme('theme-ocean')">💙 海洋绿</button>
                 <button class="theme-btn theme-purple" @click="setTheme('theme-purple')">💜 梦幻紫</button>
                 <button class="theme-btn theme-sunset" @click="setTheme('theme-sunset')">🧡 日落橙</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div id="settingsModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <span>⚙️ 设置</span>
+                <button class="modal-close" @click="closeSettingsModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <div class="settings-section-title" @click="toggleAdvancedSettings">
+                        <span>🔧 高级选项</span>
+                        <span class="toggle-icon">{{ showAdvancedSettings ? '▼' : '▶' }}</span>
+                    </div>
+                    <div class="settings-section-content" v-show="showAdvancedSettings">
+                        <p class="settings-hint">粘贴网易云音乐 Cookie 可播放 VIP 歌曲。<br>Cookie 获取方式：浏览器登录 music.163.com → F12 开发者工具 → 网络 → 找到请求中的 cookie 字段。</p>
+                        <textarea class="cookie-textarea" v-model="userCookie" rows="4" placeholder="粘贴完整的 Cookie 字符串，例如：MUSIC_U=xxxxx; ..."></textarea>
+                        <div class="settings-buttons">
+                            <button class="btn btn-outline" @click="saveCookie">保存 Cookie</button>
+                            <button class="btn btn-outline" @click="clearCookie">清除 Cookie</button>
+                        </div>
+                        <div v-if="cookieStatus" class="cookie-status">{{ cookieStatus }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" @click="closeSettingsModal">关闭</button>
             </div>
         </div>
     </div>
