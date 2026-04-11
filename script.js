@@ -36,10 +36,10 @@ createApp({
         // 推荐歌单
         const recommendPlaylists = ref([]);
         
-        // 当前播放歌曲的 VIP 状态（用于下载按钮判断）
+        // 当前播放歌曲的 VIP 状态
         const currentIsVip = ref(false);
         
-        // API 地址（请替换为你的实际地址）
+        // API 地址（您的自建地址）
         const API_BASE = 'https://api-enhanced-wine-tau.vercel.app';
         
         // 弹窗相关
@@ -61,6 +61,12 @@ createApp({
             return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
         };
         
+        // 强制将 HTTP URL 转为 HTTPS
+        const toHttps = (url) => {
+            if (!url) return url;
+            return url.replace(/^http:\/\//i, 'https://');
+        };
+        
         const extractSongId = (input) => {
             if (!input) return null;
             if (/^\d+$/.test(input.trim())) return input.trim();
@@ -73,7 +79,7 @@ createApp({
         const addToHistory = (id, name, artist, cover) => {
             const existing = playHistory.value.find(item => item.id === id);
             if (!existing) {
-                playHistory.value.unshift({ id, name, artist, cover });
+                playHistory.value.unshift({ id, name, artist, cover: toHttps(cover) });
                 if (playHistory.value.length > 8) playHistory.value.pop();
             }
         };
@@ -131,37 +137,53 @@ createApp({
             }
         };
         
-        // ---------- 播放函数（免费歌曲） ----------
+        // ---------- 核心播放函数（增加调试和 HTTPS 转换）----------
         const playSongById = async (songId, songName, artistName, coverUrl) => {
             if (!songId) return;
             loadingPlay.value = true;
             playErrorMsg.value = '';
             try {
                 const urlRes = await axios.get(`${API_BASE}/song/url?id=${songId}`, { timeout: 15000 });
-                if (urlRes.data && urlRes.data.data && urlRes.data.data[0] && urlRes.data.data[0].url) {
-                    const musicUrl = urlRes.data.data[0].url;
-                    currentSongName.value = songName || '未知歌曲';
-                    currentArtist.value = artistName || '网易云音乐';
-                    currentCover.value = coverUrl || '';
-                    currentIsVip.value = false;   // 免费歌曲
-                    addToHistory(songId, songName, currentArtist.value, currentCover.value);
-                    
-                    const audio = audioPlayer.value;
-                    if (audio) {
-                        audio.src = musicUrl;
-                        currentAudioSrc = musicUrl;
-                        audio.volume = volumeValue.value;
-                        await audio.play();
-                        isPlaying.value = true;
+                // 调试：打印完整返回数据
+                console.log('[DEBUG] /song/url 返回:', urlRes.data);
+                
+                if (urlRes.data && urlRes.data.data && urlRes.data.data[0]) {
+                    const musicUrlRaw = urlRes.data.data[0].url;
+                    if (musicUrlRaw) {
+                        const musicUrl = toHttps(musicUrlRaw);
+                        currentSongName.value = songName || '未知歌曲';
+                        currentArtist.value = artistName || '网易云音乐';
+                        currentCover.value = toHttps(coverUrl || '');
+                        currentIsVip.value = false;
+                        addToHistory(songId, songName, currentArtist.value, currentCover.value);
+                        
+                        const audio = audioPlayer.value;
+                        if (audio) {
+                            audio.src = musicUrl;
+                            currentAudioSrc = musicUrl;
+                            audio.volume = volumeValue.value;
+                            await audio.play();
+                            isPlaying.value = true;
+                            // 播放成功后清空错误信息
+                            playErrorMsg.value = '';
+                        }
+                        fetchLyrics(songId);
+                    } else {
+                        // 返回的 url 为空
+                        console.warn('API 返回的播放地址为空，歌曲可能受版权保护');
+                        playErrorMsg.value = '该歌曲暂无可用播放地址（可能是 VIP 或版权限制）';
+                        throw new Error('播放地址为空');
                     }
-                    fetchLyrics(songId);
                 } else {
-                    throw new Error('未获取到播放地址，可能为VIP歌曲或版权限制');
+                    throw new Error('API 返回数据格式异常，未找到播放链接');
                 }
             } catch (err) {
+                console.error('播放错误:', err);
                 playErrorMsg.value = err.message || '网络错误，请重试';
-                console.error(err);
-                currentIsVip.value = false;
+                // 若因跨域或网络问题，给出更友好提示
+                if (err.message.includes('Network Error')) {
+                    playErrorMsg.value = '网络错误，请检查 API 服务是否正常';
+                }
             } finally {
                 loadingPlay.value = false;
             }
@@ -187,7 +209,6 @@ createApp({
             hideVipModal();
         };
         
-        // 统一的播放点击处理（判断 VIP）
         const handlePlayClick = (song) => {
             if (song.isVip) {
                 showVipModal(song);
@@ -209,14 +230,13 @@ createApp({
                 setTimeout(() => { if (playErrorMsg.value === 'VIP歌曲暂不支持下载，请支持正版') playErrorMsg.value = ''; }, 2000);
                 return;
             }
-            // 免费歌曲：打开链接并提示
             const musicUrl = audio.src;
             window.open(musicUrl, '_blank');
             playErrorMsg.value = '✅ 已打开音频链接，可右键另存为';
             setTimeout(() => { if (playErrorMsg.value === '✅ 已打开音频链接，可右键另存为') playErrorMsg.value = ''; }, 3000);
         };
         
-        // 初始化弹窗事件绑定
+        // 初始化弹窗事件
         const initModalEvents = () => {
             const modal = document.getElementById('vipModal');
             if (!modal) return;
@@ -231,7 +251,7 @@ createApp({
             };
         };
         
-        // ---------- 搜索歌曲（增加 VIP 识别）----------
+        // ---------- 搜索歌曲 ----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -242,14 +262,14 @@ createApp({
                 if (res.data && res.data.result && res.data.result.songs) {
                     searchResults.value = res.data.result.songs.map(item => {
                         const fee = item.fee || 0;
-                        // 修正 VIP 判断：fee 为 1 或 4 才是 VIP
+                        // 修正 VIP 判断：fee 为 1 或 4 才是真正付费
                         const isVip = (fee === 1 || fee === 4);
                         return {
                             id: String(item.id),
                             name: item.name,
                             artist: item.artists.map(a => a.name).join('/'),
                             duration: item.duration,
-                            picUrl: item.album.picUrl || '',
+                            picUrl: toHttps(item.album.picUrl || ''),
                             isVip: isVip,
                             fee: fee
                         };
@@ -279,7 +299,7 @@ createApp({
                         id: String(songDetail.id),
                         name: songDetail.name,
                         artist: songDetail.ar.map(a => a.name).join('/'),
-                        picUrl: songDetail.al.picUrl || '',
+                        picUrl: toHttps(songDetail.al.picUrl || ''),
                         isVip: isVip
                     };
                     if (isVip) {
@@ -308,7 +328,7 @@ createApp({
                         plist.push({
                             id: res.data.playlist.id,
                             name: res.data.playlist.name,
-                            coverImgUrl: res.data.playlist.coverImgUrl,
+                            coverImgUrl: toHttps(res.data.playlist.coverImgUrl || ''),
                             trackCount: res.data.playlist.trackCount
                         });
                     }
@@ -338,7 +358,7 @@ createApp({
                             name: track.name,
                             artist: track.ar.map(a => a.name).join('/'),
                             duration: track.dt,
-                            picUrl: track.al?.picUrl || '',
+                            picUrl: toHttps(track.al?.picUrl || ''),
                             isVip: isVip
                         };
                     });
@@ -406,8 +426,9 @@ createApp({
             isPlaying.value = false;
             currentIsVip.value = false;
         };
-        const onAudioError = () => { 
-            playErrorMsg.value = '播放失败，可能是版权限制或链接过期'; 
+        const onAudioError = (e) => { 
+            console.error('Audio 元素错误:', e);
+            playErrorMsg.value = '播放失败，可能是音频链接无效或跨域问题'; 
             isPlaying.value = false;
             currentIsVip.value = false;
         };
