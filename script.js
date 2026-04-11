@@ -48,20 +48,18 @@ createApp({
         
         const isDarkMode = ref(false);
         
-        // ========== API 列表（共 10 个，按优先级排序）==========
-        // 前两个是您自己的自建 API
-        // 后八个是国内公共 API（自动故障转移）
+        // ========== API 列表（共 10 个）==========
         const API_LIST = [
-            'https://meting-api-pi-one.vercel.app',      // 1. 您的 Meting API
-            'https://api-enhanced-delta-six.vercel.app', // 2. 您的自建 API
-            'https://api.liyefeng.top',                  // 3. 公共备用
-            'https://ncm.zhenxin.me',                    // 4. 真心
-            'https://zm.i9mr.com',                       // 5. 墨染云
-            'https://music.mcseekeri.com',               // 6. MCSeekeri
-            'https://zm.wwoyun.cn',                      // 7. 宁波节点
-            'https://api.injahow.cn',                    // 8. injahow
-            'https://netease-api.cyan9527.com',          // 9. 社区备用
-            'https://music.ghser.com'                    // 10. 社区备用
+            'https://meting-api-pi-one.vercel.app',
+            'https://api-enhanced-delta-six.vercel.app',
+            'https://api.liyefeng.top',
+            'https://ncm.zhenxin.me',
+            'https://zm.i9mr.com',
+            'https://music.mcseekeri.com',
+            'https://zm.wwoyun.cn',
+            'https://api.injahow.cn',
+            'https://netease-api.cyan9527.com',
+            'https://music.ghser.com'
         ];
         
         let currentApiIndex = 0;
@@ -85,6 +83,31 @@ createApp({
         const toHttps = (url) => {
             if (!url) return url;
             return url.replace(/^http:\/\//i, 'https://');
+        };
+        
+        // 增强的封面提取函数
+        const extractCoverUrl = (item) => {
+            // 尝试多个可能的字段
+            const candidates = [
+                item.picUrl,
+                item.cover,
+                item.coverUrl,
+                item.album?.picUrl,
+                item.album?.cover,
+                item.album?.coverImgUrl,
+                item.artists?.[0]?.img1v1Url,
+                item.artist?.img1v1Url,
+                item.song?.album?.picUrl,
+                item.imgUrl,
+                item.image
+            ];
+            for (let url of candidates) {
+                if (url && url.startsWith('http')) {
+                    return toHttps(url);
+                }
+            }
+            // 如果没有找到，返回一个固定的默认音乐图标（base64 或 CDN）
+            return 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
         };
         
         const extractSongId = (input) => {
@@ -130,7 +153,7 @@ createApp({
             }
         };
         
-        // ---------- 歌词滚动（仅容器内）----------
+        // ---------- 歌词滚动 ----------
         const scrollLyricsToActive = () => {
             if (!lyricsContainer.value) return;
             const container = lyricsContainer.value;
@@ -238,7 +261,7 @@ createApp({
             throw lastError || new Error('所有 API 均不可用');
         };
         
-        // ---------- 搜索函数（兼容多格式）----------
+        // ---------- 搜索函数（增强封面提取）----------
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -266,15 +289,16 @@ createApp({
                             const name = item.name || item.title;
                             const artist = item.artists?.[0]?.name || item.artist || item.singer || '未知';
                             const duration = item.duration || item.dt || 0;
-                            const picUrl = item.album?.picUrl || item.picUrl || item.cover || '';
                             const fee = item.fee || 0;
                             const isVip = (fee === 1 || fee === 4);
+                            // 使用增强的封面提取函数
+                            const picUrl = extractCoverUrl(item);
                             return {
                                 id: String(id),
                                 name: name,
                                 artist: artist,
                                 duration: duration,
-                                picUrl: toHttps(picUrl),
+                                picUrl: picUrl,
                                 isVip: isVip
                             };
                         });
@@ -359,7 +383,7 @@ createApp({
                 const musicUrl = await getSongUrl(songId);
                 currentSongName.value = songName || '未知歌曲';
                 currentArtist.value = artistName || '网易云音乐';
-                currentCover.value = toHttps(coverUrl || '');
+                currentCover.value = coverUrl && coverUrl.startsWith('http') ? toHttps(coverUrl) : 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
                 currentIsVip.value = false;
                 currentSongId = songId;
                 currentSongArtist = currentArtist.value;
@@ -423,6 +447,7 @@ createApp({
         };
         
         // ---------- VIP 弹窗逻辑 ----------
+        let pendingVipSong = null;
         const showVipModal = (song) => {
             pendingVipSong = song;
             const modal = document.getElementById('vipModal');
@@ -457,11 +482,12 @@ createApp({
                 const songDetail = await getSongDetail(id);
                 const fee = songDetail.fee || 0;
                 const isVip = (fee === 1 || fee === 4);
+                const picUrl = extractCoverUrl(songDetail);
                 const song = {
                     id: String(songDetail.id),
                     name: songDetail.name,
                     artist: songDetail.ar.map(a => a.name).join('/'),
-                    picUrl: toHttps(songDetail.al.picUrl || ''),
+                    picUrl: picUrl,
                     isVip: isVip
                 };
                 if (isVip) {
@@ -487,7 +513,7 @@ createApp({
                         plist.push({
                             id: res.data.playlist.id,
                             name: res.data.playlist.name,
-                            coverImgUrl: toHttps(res.data.playlist.coverImgUrl || ''),
+                            coverImgUrl: toHttps(res.data.playlist.coverImgUrl || 'https://picsum.photos/80/80?random=1'),
                             trackCount: res.data.playlist.trackCount
                         });
                     }
@@ -517,7 +543,7 @@ createApp({
                             name: track.name,
                             artist: track.ar.map(a => a.name).join('/'),
                             duration: track.dt,
-                            picUrl: toHttps(track.al?.picUrl || ''),
+                            picUrl: extractCoverUrl(track),
                             isVip: isVip
                         };
                     });
@@ -688,8 +714,6 @@ createApp({
             playSongById(nextSong.id, nextSong.name, nextSong.artist, nextSong.cover);
         };
         
-        // 初始化弹窗事件
-        let pendingVipSong = null;
         const initModalEvents = () => {
             const vipModal = document.getElementById('vipModal');
             if (vipModal) {
