@@ -61,6 +61,12 @@ createApp({
         const cardOpacity = ref(100);
         const maskOpacity = ref(30);
         
+        // 个人歌单相关
+        const userCookie = ref('');
+        const userPlaylists = ref([]);
+        const playlistLoading = ref(false);
+        const playlistError = ref('');
+        
         // ---------- API 列表 ----------
         const API_LIST = [
             'https://meting-api-pi-one.vercel.app',
@@ -248,7 +254,7 @@ createApp({
             }
         };
         
-        // ---------- 通用请求函数（增加重试和更长超时）----------
+        // ---------- 通用请求函数 ----------
         const requestWithFallback = async (urlPath, options = {}) => {
             const maxRetries = API_LIST.length;
             let lastError = null;
@@ -726,6 +732,72 @@ createApp({
             await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`, true);
         };
         
+        // ---------- 个人歌单功能 ----------
+        const openMyPlaylistsModal = () => {
+            userCookie.value = '';
+            userPlaylists.value = [];
+            playlistError.value = '';
+            const modal = document.getElementById('myPlaylistsModal');
+            if (modal) modal.style.display = 'flex';
+        };
+        
+        const closeMyPlaylistsModal = () => {
+            const modal = document.getElementById('myPlaylistsModal');
+            if (modal) modal.style.display = 'none';
+        };
+        
+        const fetchUserPlaylists = async () => {
+            if (!userCookie.value.trim()) {
+                playlistError.value = '请输入 Cookie';
+                return;
+            }
+            playlistLoading.value = true;
+            playlistError.value = '';
+            userPlaylists.value = [];
+            
+            try {
+                // 首先通过 cookie 获取用户信息（获取 uid）
+                const accountRes = await axios.get(`${API_LIST[0]}/user/account`, {
+                    params: { cookie: userCookie.value }
+                });
+                if (accountRes.data && accountRes.data.code === 200 && accountRes.data.profile) {
+                    const uid = accountRes.data.profile.userId;
+                    // 获取用户歌单列表
+                    const playlistRes = await axios.get(`${API_LIST[0]}/user/playlist`, {
+                        params: { uid: uid, cookie: userCookie.value, limit: 100 }
+                    });
+                    if (playlistRes.data && playlistRes.data.code === 200 && playlistRes.data.playlist) {
+                        // 过滤掉收藏的歌单（如果有）和太小的，通常第一个是“我喜欢的音乐”
+                        const playlists = playlistRes.data.playlist.map(pl => ({
+                            id: pl.id,
+                            name: pl.name,
+                            coverImgUrl: pl.coverImgUrl,
+                            trackCount: pl.trackCount
+                        }));
+                        userPlaylists.value = playlists;
+                        if (playlists.length === 0) {
+                            playlistError.value = '未找到歌单';
+                        }
+                    } else {
+                        playlistError.value = '获取歌单失败，请检查 Cookie 是否有效';
+                    }
+                } else {
+                    playlistError.value = 'Cookie 无效或已过期';
+                }
+            } catch (err) {
+                console.error('获取歌单失败:', err);
+                playlistError.value = '网络错误，请重试';
+            } finally {
+                playlistLoading.value = false;
+            }
+        };
+        
+        const selectUserPlaylist = async (playlist) => {
+            closeMyPlaylistsModal();
+            // 加载该歌单的歌曲
+            await fetchPlaylistTracks(playlist.id, playlist.name, true);
+        };
+        
         // ---------- 上一曲/下一曲 ----------
         const playPrev = () => {
             if (currentPlaylistType === 'custom' && currentPlaylistSongs.length > 0) {
@@ -1082,6 +1154,12 @@ createApp({
                 if (confirmBtn) confirmBtn.onclick = closeFeedbackModal;
                 feedbackModal.onclick = (e) => { if (e.target === feedbackModal) closeFeedbackModal(); };
             }
+            const myPlaylistsModal = document.getElementById('myPlaylistsModal');
+            if (myPlaylistsModal) {
+                const closeBtn = document.getElementById('closeMyPlaylistsBtn');
+                if (closeBtn) closeBtn.onclick = closeMyPlaylistsModal;
+                myPlaylistsModal.onclick = (e) => { if (e.target === myPlaylistsModal) closeMyPlaylistsModal(); };
+            }
         };
         
         onMounted(() => {
@@ -1117,7 +1195,10 @@ createApp({
             currentTheme, openThemeModal, closeThemeModal, setTheme,
             bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, bodyBackgroundStyle,
             saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveMaskOpacity,
-            openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal
+            openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal,
+            // 个人歌单
+            userCookie, userPlaylists, playlistLoading, playlistError,
+            openMyPlaylistsModal, closeMyPlaylistsModal, fetchUserPlaylists, selectUserPlaylist
         };
     }
 }).mount('#app');
