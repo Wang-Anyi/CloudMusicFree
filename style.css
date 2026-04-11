@@ -878,7 +878,7 @@ body {
     filter: brightness(0.95);
 }
 
-/* 全屏播放器样式（居中弹窗模式，圆角，边缘缝隙，上移） */
+/* 全屏播放器样式（居中弹窗模式，圆角，边缘缝隙，稍微上移） */
 .fullscreen-modal {
     position: fixed;
     top: 0;
@@ -1031,8 +1031,7 @@ body {
     .fullscreen-buttons .icon-btn { font-size: 1rem; }
 }
 
-/* ========== 新增功能样式 ========== */
-/* 播放队列 */
+/* ========== 新增样式（播放队列、迷你播放器、相似歌曲、评论等） ========== */
 .play-queue-controls {
     display: flex;
     gap: 10px;
@@ -1089,7 +1088,6 @@ body {
     color: #d44c2f;
 }
 
-/* 迷你播放器 */
 .mini-player {
     position: fixed;
     bottom: 20px;
@@ -1151,7 +1149,6 @@ body {
     cursor: pointer;
 }
 
-/* 相似歌曲列表 */
 .similar-list {
     max-height: 400px;
     overflow-y: auto;
@@ -1184,13 +1181,11 @@ body {
     color: var(--text-secondary);
 }
 
-/* MV播放器 */
 .mv-container iframe {
     width: 100%;
     min-height: 300px;
 }
 
-/* 评论样式 */
 .comment-item {
     display: flex;
     gap: 12px;
@@ -1216,22 +1211,30 @@ body {
     color: var(--text-secondary);
 }
 
-/* 睡眠定时器按钮组 */
 .sleep-options {
     display: flex;
     flex-direction: column;
     gap: 10px;
 }
 
-/* 设置弹窗中的额外样式（毛玻璃强度、字体选择等） */
+/* 设置弹窗中新增的滑块 */
 .settings-slider[data-setting="glass"] {
     margin-bottom: 20px;
 }
-.font-select {
+
+/* 自定义字体上传区域 */
+.font-upload {
+    margin: 12px 0;
+}
+.font-upload input {
+    display: block;
     width: 100%;
-    padding: 8px;
     margin-top: 8px;
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
-    background: white;
+}
+
+/* 导入导出按钮组 */
+.import-export-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
 }
