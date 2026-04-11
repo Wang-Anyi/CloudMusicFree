@@ -858,7 +858,7 @@ body {
     filter: brightness(0.95);
 }
 
-/* 全屏播放器样式（窗口模式，尺寸基于视口） */
+/* 全屏播放器样式（窗口模式，有圆角边缘缝隙） */
 .fullscreen-modal {
     position: fixed;
     top: 0;
