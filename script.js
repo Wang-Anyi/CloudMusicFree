@@ -5,6 +5,7 @@ createApp({
         // ---------- 响应式数据 ----------
         const searchKeyword = ref('');
         const songIdInput = ref('');
+        const playlistUrlInput = ref('');  // 新增：自定义歌单输入
         const searchResults = ref([]);
         const loadingSearch = ref(false);
         const searchPerformed = ref(false);
@@ -98,6 +99,20 @@ createApp({
             if (match && match[1]) return match[1];
             const match2 = input.match(/\/song\/(\d+)/);
             return match2 ? match2[1] : null;
+        };
+        
+        // 新增：提取歌单 ID
+        const extractPlaylistId = (input) => {
+            if (!input) return null;
+            if (/^\d+$/.test(input.trim())) return input.trim();
+            // 匹配 /playlist?id=123 或 /playlist/123 或 /my/m/music/playlist?id=123
+            const match = input.match(/[?&]id=(\d+)/);
+            if (match && match[1]) return match[1];
+            const match2 = input.match(/\/playlist\/(\d+)/);
+            if (match2 && match2[1]) return match2[1];
+            const match3 = input.match(/\/my\/m\/music\/playlist\?id=(\d+)/);
+            if (match3 && match3[1]) return match3[1];
+            return null;
         };
         
         const addToHistory = (id, name, artist, cover) => {
@@ -459,7 +474,7 @@ createApp({
             }
         };
         
-        // ---------- 下载当前歌曲（嵌入封面图片）----------
+        // ---------- 下载当前歌曲 ----------
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src || audio.src === '') {
@@ -474,16 +489,12 @@ createApp({
             }
             
             try {
-                // 显示下载中提示
                 playErrorMsg.value = '⏳ 正在准备下载（含封面）...';
-                
-                // 1. 获取音频文件 ArrayBuffer
                 const musicUrl = audio.src;
                 const audioResponse = await fetch(musicUrl);
                 if (!audioResponse.ok) throw new Error('音频获取失败');
                 const audioBuffer = await audioResponse.arrayBuffer();
                 
-                // 2. 获取封面图片 ArrayBuffer
                 let coverBuffer = null;
                 const coverUrl = currentCover.value;
                 if (coverUrl && coverUrl !== 'https://cdn-icons-png.flaticon.com/512/727/727245.png') {
@@ -497,15 +508,12 @@ createApp({
                     }
                 }
                 
-                // 3. 使用 browser-id3-writer 创建带封面的 MP3 Blob
                 const writer = new window.ID3Writer(audioBuffer);
-                // 设置基本标签
                 writer.setFrame('TIT2', currentSongName.value || '未知歌曲')
                       .setFrame('TPE1', [currentArtist.value || '未知艺术家'])
                       .setFrame('TALB', '云音匣下载')
                       .setFrame('TYER', new Date().getFullYear().toString())
                       .setFrame('TCON', '流行');
-                // 嵌入封面图片
                 if (coverBuffer) {
                     const coverType = coverUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
                     writer.setFrame('APIC', {
@@ -518,7 +526,6 @@ createApp({
                 writer.addTag();
                 const taggedBuffer = writer.arrayBuffer;
                 
-                // 4. 创建下载链接
                 const blob = new Blob([taggedBuffer], { type: 'audio/mpeg' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
@@ -664,6 +671,21 @@ createApp({
             } finally {
                 loadingSearch.value = false;
             }
+        };
+        
+        // ---------- 新增：加载自定义歌单 ----------
+        const loadCustomPlaylist = async () => {
+            const input = playlistUrlInput.value.trim();
+            if (!input) return alert('请输入歌单链接或ID');
+            const playlistId = extractPlaylistId(input);
+            if (!playlistId) {
+                alert('无法识别歌单ID，请检查链接格式');
+                return;
+            }
+            // 直接调用 fetchPlaylistTracks，传入歌单ID和自定义名称
+            await fetchPlaylistTracks(playlistId, `自定义歌单 ${playlistId}`);
+            // 清空输入框（可选）
+            // playlistUrlInput.value = '';
         };
         
         // ---------- 播放器控制 ----------
@@ -879,13 +901,13 @@ createApp({
         });
         
         return {
-            searchKeyword, songIdInput, searchResults, loadingSearch, searchPerformed,
+            searchKeyword, songIdInput, playlistUrlInput, searchResults, loadingSearch, searchPerformed,
             currentSongName, currentArtist, currentCover, loadingPlay, playErrorMsg, audioPlayer,
             isPlaying, currentTime, duration, progressValue, volumeValue,
             lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
             formatDuration, formatTime, searchSongs, parseById, playSongById,
             togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
-            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks,
+            onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks, loadCustomPlaylist,
             handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
             openFullscreenPlayer, closeFullscreenPlayer,
             fullscreenCover, fullscreenSongName, fullscreenArtist,
