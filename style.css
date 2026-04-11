@@ -1,4 +1,4 @@
-/* ========== 基础变量 ========== */
+/* ========== 基础变量（浅色模式默认） ========== */
 :root {
     --bg-gradient-start: #f9f3e6;
     --bg-gradient-end: #e8e0d5;
@@ -20,7 +20,8 @@
     --ctrl-btn-color: #4f2a18;
 }
 
-.dark-mode {
+/* 暗色模式覆盖变量（优先级高） */
+body.dark-mode {
     --bg-gradient-start: #1a1a2e;
     --bg-gradient-end: #16213e;
     --container-bg: rgba(0, 0, 0, 0.75);
@@ -144,7 +145,7 @@ body {
     box-shadow: 0 2px 6px rgba(0,0,0,0.05);
     border: 1px solid var(--border-color);
 }
-.dark-mode .search-input {
+body.dark-mode .search-input {
     background: #2a2a3a;
     color: #e0e0e0;
     border-color: #4a4a5a;
@@ -168,7 +169,7 @@ body {
     border: 1px solid var(--border-color);
     background: white;
 }
-.dark-mode .small-input {
+body.dark-mode .small-input {
     background: #2a2a3a;
     color: #e0e0e0;
     border-color: #4a4a5a;
@@ -196,7 +197,7 @@ body {
     color: #b45a3b;
     border: 1px solid #e2c7b5;
 }
-.dark-mode .btn-outline {
+body.dark-mode .btn-outline {
     background: #3a3a4a;
     color: #ea8c5c;
     border-color: #ea8c5c;
@@ -223,7 +224,7 @@ body {
     cursor: pointer;
     color: #a16242;
 }
-.dark-mode .refresh-btn {
+body.dark-mode .refresh-btn {
     color: #ea8c5c;
 }
 .playlist-grid {
@@ -290,7 +291,7 @@ body {
     transition: 0.2s;
     border: 1px solid var(--border-color);
 }
-.dark-mode .song-item {
+body.dark-mode .song-item {
     background: #2a2a3a;
 }
 .song-item:hover {
@@ -341,11 +342,11 @@ body {
     margin-left: 6px;
     font-weight: 500;
 }
-.dark-mode .badge-free {
+body.dark-mode .badge-free {
     background: #2a5a2a;
     color: #a0e0a0;
 }
-.dark-mode .badge-vip {
+body.dark-mode .badge-vip {
     background: #5a2a2a;
     color: #f0a080;
 }
@@ -362,11 +363,11 @@ body {
     background: #ea8c5c;
     color: white;
 }
-.dark-mode .play-btn-small {
+body.dark-mode .play-btn-small {
     background: #3a3a4a;
     color: #ea8c5c;
 }
-.dark-mode .play-btn-small:hover {
+body.dark-mode .play-btn-small:hover {
     background: #ea8c5c;
     color: white;
 }
