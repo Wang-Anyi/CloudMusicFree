@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>云音乐解析 · 免费高清播放器</title>
+    <!-- Vue 3 & Axios 网络框架 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- 自定义样式 -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+    <div class="app-container">
+        <!-- 头部区域 -->
+        <div class="header">
+            <h1>🎵 云音乐解析 · 免费听</h1>
+            <p>搜索歌曲 / ID解析 · 高品质在线播放 · 歌词同步 · 热门歌单</p>
+        </div>
+
+        <div class="main-grid">
+            <!-- 左侧：搜索 + 歌单推荐 + 搜索结果 -->
+            <div class="left-panel">
+                <!-- 搜索栏 -->
+                <div class="search-card">
+                    <div class="search-box">
+                        <input type="text" class="search-input" v-model="searchKeyword" placeholder="输入歌名 / 歌手 例如：晴天 周杰伦" @keyup.enter="searchSongs">
+                        <button class="btn btn-primary" @click="searchSongs">🔍 搜索</button>
+                    </div>
+                    <div class="id-parse-group">
+                        <input type="text" class="small-input" v-model="songIdInput" placeholder="网易云歌曲ID 或 链接 (如 id=1869882)">
+                        <button class="btn btn-outline" @click="parseById">🎧 解析播放</button>
+                    </div>
+                </div>
+
+                <!-- 热门推荐歌单 (丰富页面) -->
+                <div class="playlist-section">
+                    <div class="section-title">
+                        <span>🔥 热门推荐歌单</span>
+                        <span class="refresh-btn" @click="loadPlaylists">⟳ 换一换</span>
+                    </div>
+                    <div class="playlist-grid">
+                        <div class="playlist-item" v-for="pl in recommendPlaylists" :key="pl.id" @click="fetchPlaylistTracks(pl.id, pl.name)">
+                            <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=pl'" class="pl-cover" alt="cover">
+                            <div class="pl-name">{{ pl.name }}</div>
+                            <div class="pl-count">📀 {{ pl.trackCount || 0 }}首</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 搜索结果列表 -->
+                <div class="results-header">
+                    <span>🎶 搜索结果</span>
+                    <span style="font-size:12px;">点击右侧▶️播放</span>
+                </div>
+                <div class="song-list" v-if="searchResults.length">
+                    <div class="song-item" v-for="song in searchResults" :key="song.id" @click="playSongById(song.id, song.name, song.artists, song.picUrl)">
+                        <div class="song-info">
+                            <img class="song-cover" :src="song.picUrl || 'https://picsum.photos/48/48?random=1'" alt="cover" @error="e => e.target.src='https://picsum.photos/48/48?grayscale'">
+                            <div class="song-details">
+                                <div class="song-name">{{ song.name }} <span class="badge-free" v-if="!song.paid">免费</span></div>
+                                <div class="song-artist">{{ formatArtists(song.artists) }} · {{ formatDuration(song.duration) }}</div>
+                            </div>
+                        </div>
+                        <button class="play-btn-small" @click.stop="playSongById(song.id, song.name, song.artists, song.picUrl)">▶ 播放</button>
+                    </div>
+                </div>
+                <div v-else-if="loadingSearch" class="empty-tip">⏳ 搜索中，请稍候...</div>
+                <div v-else-if="!loadingSearch && searchPerformed && searchResults.length===0" class="empty-tip">😔 没有找到相关歌曲，换个关键词试试~</div>
+                <div v-else class="empty-tip">✨ 试试搜索「周杰伦」或点击上方歌单</div>
+            </div>
+
+            <!-- 右侧：播放器 + 歌词 + 最近播放 -->
+            <div class="right-panel">
+                <div class="player-card">
+                    <div class="now-playing">
+                        <img class="cover-large" :src="currentCover || 'https://picsum.photos/180/180?grayscale'" alt="album cover">
+                        <div class="track-title">{{ currentSongName || '未播放' }}</div>
+                        <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
+                        
+                        <!-- 增强播放控件：进度条 + 音量 -->
+                        <div class="player-controls">
+                            <div class="progress-bar-container">
+                                <span class="time-current">{{ formatTime(currentTime) }}</span>
+                                <input type="range" class="progress-bar" v-model="progressValue" @input="seekAudio" min="0" max="100" step="0.1">
+                                <span class="time-duration">{{ formatTime(duration) }}</span>
+                            </div>
+                            <div class="volume-control">
+                                <span>🔊</span>
+                                <input type="range" v-model="volumeValue" @input="changeVolume" min="0" max="1" step="0.01">
+                            </div>
+                        </div>
+
+                        <audio ref="audioPlayer" @timeupdate="updateProgress" @loadedmetadata="onLoadedMetadata" @ended="onAudioEnded" @error="onAudioError" style="display:none;"></audio>
+                        <div class="audio-control-buttons">
+                            <button class="ctrl-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️ 暂停' : '▶️ 播放' }}</button>
+                            <button class="ctrl-btn" @click="stopAudio">⏹️ 停止</button>
+                        </div>
+                        <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
+                        <div v-if="playErrorMsg" class="loading-tip" style="background:#ffdad2; color:#b13e1a;">{{ playErrorMsg }}</div>
+                    </div>
+                </div>
+
+                <!-- 歌词展示区域 (丰富) -->
+                <div class="lyrics-card">
+                    <div class="section-title">📃 滚动歌词</div>
+                    <div class="lyrics-container" ref="lyricsContainer">
+                        <div v-if="lyricsLines.length" class="lyrics-lines">
+                            <div v-for="(line, idx) in lyricsLines" :key="idx" :class="['lyric-line', { active: currentLyricIndex === idx }]">
+                                {{ line.text }}
+                            </div>
+                        </div>
+                        <div v-else class="empty-lyrics">暂无歌词 (或纯音乐)</div>
+                    </div>
+                </div>
+
+                <!-- 最近播放记录 -->
+                <div class="history-card">
+                    <div class="section-title">🕘 最近播放</div>
+                    <div class="history-list" v-if="playHistory.length">
+                        <div v-for="(item, idx) in playHistory" :key="idx" class="history-item" @click="playSongById(item.id, item.name, item.artist, item.cover)">
+                            <span>{{ idx+1 }}.</span>
+                            <span class="history-name">{{ item.name }}</span>
+                            <span class="history-artist">{{ item.artist }}</span>
+                        </div>
+                    </div>
+                    <div v-else class="empty-lyrics">暂无播放记录</div>
+                </div>
+            </div>
+        </div>
+        <div class="footer-note">
+            🎧 数据来自公开接口 · 仅供个人学习交流 · 支持正版音乐 · 歌词/歌单实时解析
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
