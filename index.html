@@ -480,12 +480,12 @@
 
     <!-- 我的歌单 -->
     <div id="myPlaylistsModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 640px; max-height: 82vh;">
+        <div class="modal-content">
             <div class="modal-header">
                 <span>💿 我的歌单</span>
                 <button class="modal-close" id="closeMyPlaylistsBtn">&times;</button>
             </div>
-            <div class="modal-body" style="overflow-y: auto; text-align: left;">
+            <div class="modal-body">
                 <div v-if="loadingMyPlaylists" class="empty-tip">⏳ 正在加载你的歌单...</div>
                 <div v-else>
                     <div v-if="!myPlaylists.length" class="empty-tip">没有获取到歌单，请确认 Cookie 是否有效</div>
