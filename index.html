@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=6" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=6" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=7" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=7" type="image/x-icon">
 
-    <link rel="manifest" href="./manifest.json?v=5">
+    <link rel="manifest" href="./manifest.json?v=6">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=5">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=6">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -23,7 +23,7 @@
     <script src="https://cdn.jsdelivr.net/npm/idb@7.1.1/build/index.global.min.js"></script>
     <link rel="stylesheet" href="./style.css">
 </head>
-<body :class="currentTheme" :style="bodyBackgroundStyle">
+<body>
 <div id="app">
     <div class="app-container">
         <div class="header">
@@ -233,7 +233,7 @@
         </div>
     </div>
 
-    <!-- ✅ 设置弹窗：900px 宽 + 两列网格 -->
+    <!-- 设置弹窗 -->
     <div id="settingsModal" class="modal" style="display: none;">
         <div class="modal-content settings-modal-content">
             <div class="modal-header">
@@ -242,7 +242,6 @@
             </div>
             <div class="modal-body">
                 <div class="settings-grid">
-                    <!-- 背景图片（跨两列） -->
                     <div class="settings-full">
                         <div class="settings-title">🖼️ 自定义背景图片</div>
                         <div class="settings-desc">输入图片URL（支持 http/https），刷新后自动应用</div>
@@ -253,7 +252,6 @@
                         </div>
                     </div>
 
-                    <!-- 音质偏好 -->
                     <div>
                         <div class="settings-title">🎚️ 音质偏好</div>
                         <div class="settings-desc">从该音质开始，自动向下降级尝试</div>
@@ -265,7 +263,6 @@
                         </select>
                     </div>
 
-                    <!-- 主容器透明度 -->
                     <div>
                         <div class="settings-title">🪟 主容器透明度</div>
                         <div class="settings-desc">控制最外层大容器的透明度</div>
@@ -275,7 +272,6 @@
                         </div>
                     </div>
 
-                    <!-- 卡片透明度 -->
                     <div>
                         <div class="settings-title">🎴 卡片透明度</div>
                         <div class="settings-desc">控制左栏、播放器、歌词、历史卡片</div>
@@ -285,7 +281,6 @@
                         </div>
                     </div>
 
-                    <!-- 背景模糊度 -->
                     <div>
                         <div class="settings-title">✨ 背景模糊度</div>
                         <div class="settings-desc">数值越大背景越模糊</div>
@@ -295,7 +290,6 @@
                         </div>
                     </div>
 
-                    <!-- 卡片遮罩透明度 -->
                     <div>
                         <div class="settings-title">🎭 卡片遮罩透明度</div>
                         <div class="settings-desc">数值越大遮罩越明显</div>
@@ -305,7 +299,6 @@
                         </div>
                     </div>
 
-                    <!-- 毛玻璃强度 -->
                     <div>
                         <div class="settings-title">🔮 毛玻璃强度</div>
                         <div class="settings-desc">数值越大背景模糊越强</div>
@@ -315,7 +308,6 @@
                         </div>
                     </div>
 
-                    <!-- 卡片模糊开关 -->
                     <div>
                         <div class="settings-title">✨ 卡片背景模糊化开关</div>
                         <div class="settings-desc">开启后卡片叠加遮罩层</div>
@@ -328,7 +320,6 @@
                         </label>
                     </div>
 
-                    <!-- 显示与全屏组（跨两列） -->
                     <div class="settings-full">
                         <div class="settings-title">📱 屏幕方向</div>
                         <div class="settings-desc">需要先进入全屏才能锁定方向，不同浏览器支持程度不同</div>
@@ -355,7 +346,6 @@
                         </label>
                     </div>
 
-                    <!-- 自定义字体（跨两列） -->
                     <div class="settings-full">
                         <div class="settings-title">🔤 自定义字体（TTF/OTF）</div>
                         <div class="settings-desc">上传字体文件，立即应用</div>
@@ -364,7 +354,6 @@
                         </div>
                     </div>
 
-                    <!-- 导入/导出（跨两列） -->
                     <div class="settings-full">
                         <div class="settings-title">📦 导入/导出设置</div>
                         <div class="import-export-buttons">
@@ -375,7 +364,6 @@
                         </div>
                     </div>
 
-                    <!-- VIP Cookie（跨两列） -->
                     <div class="settings-full">
                         <div class="settings-title">🍪 VIP Cookie（用于解析 VIP 歌曲、读取我的歌单）</div>
                         <div class="settings-desc">粘贴完整的 Cookie（包含 MUSIC_U=... 等）</div>
