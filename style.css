@@ -15,13 +15,16 @@
     --border-color: #f0e2d4;
     --btn-bg: #2c2c2c;
     --btn-text: white;
-    --progress-bg: #c0a084;
-    --progress-thumb: #ffb085;
+    --progress-played: #d44c2f;
+    --progress-unplayed: #f0e2d4;
+    --progress-bg: #f0e2d4;
+    --progress-thumb: #d44c2f;
     --ctrl-btn-bg: #f0cfb6;
     --ctrl-btn-color: #4f2a18;
     --bg-blur-amount: 0px;
     --card-opacity: 1;
     --mask-opacity: 0.3;
+    --font-scale: 1;
 }
 .theme-dark {
     --bg-gradient-start: #1a1a2e; --bg-gradient-end: #16213e;
@@ -33,7 +36,8 @@
     --lyrics-card-bg-r: 25; --lyrics-card-bg-g: 25; --lyrics-card-bg-b: 35;
     --lyrics-text: #c0c0c0; --lyrics-active-bg: #2a2a3a; --lyrics-active-color: #ea8c5c;
     --border-color: #3a3a4a; --btn-bg: #3a3a4a; --btn-text: #e0e0e0;
-    --progress-bg: #5a5a6e; --progress-thumb: #ea8c5c;
+    --progress-played: #ea8c5c; --progress-unplayed: #3a3a4a;
+    --progress-bg: #3a3a4a; --progress-thumb: #ea8c5c;
     --ctrl-btn-bg: #3a3a4a; --ctrl-btn-color: #e0e0e0;
 }
 .theme-ocean {
@@ -46,7 +50,8 @@
     --lyrics-card-bg-r: 224; --lyrics-card-bg-g: 242; --lyrics-card-bg-b: 241;
     --lyrics-text: #004d40; --lyrics-active-bg: #b2dfdb; --lyrics-active-color: #00796b;
     --border-color: #b2dfdb; --btn-bg: #00796b; --btn-text: white;
-    --progress-bg: #80cbc4; --progress-thumb: #00695c;
+    --progress-played: #00796b; --progress-unplayed: #b2dfdb;
+    --progress-bg: #b2dfdb; --progress-thumb: #00796b;
     --ctrl-btn-bg: #b2dfdb; --ctrl-btn-color: #004d40;
 }
 .theme-purple {
@@ -59,7 +64,8 @@
     --lyrics-card-bg-r: 243; --lyrics-card-bg-g: 229; --lyrics-card-bg-b: 245;
     --lyrics-text: #4a148c; --lyrics-active-bg: #e1bee7; --lyrics-active-color: #8e24aa;
     --border-color: #ce93d8; --btn-bg: #8e24aa; --btn-text: white;
-    --progress-bg: #ce93d8; --progress-thumb: #ab47bc;
+    --progress-played: #8e24aa; --progress-unplayed: #e1bee7;
+    --progress-bg: #e1bee7; --progress-thumb: #8e24aa;
     --ctrl-btn-bg: #e1bee7; --ctrl-btn-color: #4a148c;
 }
 .theme-sunset {
@@ -72,8 +78,13 @@
     --lyrics-card-bg-r: 255; --lyrics-card-bg-g: 243; --lyrics-card-bg-b: 224;
     --lyrics-text: #bf360c; --lyrics-active-bg: #ffe0b2; --lyrics-active-color: #f57c00;
     --border-color: #ffcc80; --btn-bg: #f57c00; --btn-text: white;
-    --progress-bg: #ffb74d; --progress-thumb: #f57c00;
+    --progress-played: #f57c00; --progress-unplayed: #ffe0b2;
+    --progress-bg: #ffe0b2; --progress-thumb: #f57c00;
     --ctrl-btn-bg: #ffe0b2; --ctrl-btn-color: #bf360c;
+}
+
+html {
+    font-size: calc(16px * var(--font-scale, 1));
 }
 
 * {
@@ -259,17 +270,41 @@ body {
 .track-artist { text-align: center; opacity: 0.8; margin-bottom: 12px; font-size: 0.85rem; }
 .player-controls { margin: 12px 0; }
 .progress-bar-container { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+
 .progress-bar {
-    flex: 1; height: 4px; -webkit-appearance: none;
-    background: var(--progress-bg); border-radius: 5px; outline: none;
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(
+        to right,
+        var(--progress-played) 0%,
+        var(--progress-played) var(--progress-percent, 0%),
+        var(--progress-unplayed) var(--progress-percent, 0%),
+        var(--progress-unplayed) 100%
+    );
+    border-radius: 5px;
+    outline: none;
+    cursor: pointer;
 }
 .progress-bar::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 14px; height: 14px;
-    background: var(--progress-thumb); border-radius: 50%; cursor: pointer;
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--progress-played);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 4px rgba(0,0,0,0.3);
 }
-.progress-bar {
-    background: linear-gradient(to right, var(--progress-thumb) 0%, var(--progress-thumb) var(--progress-percent, 0%), var(--progress-bg) var(--progress-percent, 0%), var(--progress-bg) 100%);
+.progress-bar::-moz-range-thumb {
+    width: 14px; height: 14px;
+    background: var(--progress-played);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 4px rgba(0,0,0,0.3);
 }
+
 .time-current, .time-duration { font-size: 0.7rem; min-width: 38px; color: #fef2e6; }
 .volume-control { display: flex; align-items: center; gap: 8px; }
 .volume-control input { width: 100px; }
@@ -352,7 +387,6 @@ body {
 .modal-btn.confirm { background: #d44c2f; color: white; }
 .modal-btn.confirm:hover { background: #b83b1f; transform: translateY(-1px); }
 
-/* ==================== ✅ 设置弹窗：宽屏 + 两列网格 ==================== */
 .settings-modal-content {
     max-width: 900px;
     width: 95%;
@@ -371,30 +405,14 @@ body {
     gap: 6px 32px;
     align-items: start;
 }
-.settings-grid > div {
-    min-width: 0;
-}
-.settings-grid > .settings-full {
-    grid-column: 1 / -1;
-}
-.settings-grid > div > .settings-title:first-child {
-    margin-top: 0;
-}
-/* 窄屏恢复单列 */
+.settings-grid > div { min-width: 0; }
+.settings-grid > .settings-full { grid-column: 1 / -1; }
+.settings-grid > div > .settings-title:first-child { margin-top: 0; }
 @media (max-width: 768px) {
-    .settings-grid {
-        grid-template-columns: 1fr;
-        gap: 4px;
-    }
-    .settings-modal-content {
-        width: 94%;
-        max-height: 90vh;
-    }
-    .settings-modal-content .modal-body {
-        padding: 18px 16px;
-    }
+    .settings-grid { grid-template-columns: 1fr; gap: 4px; }
+    .settings-modal-content { width: 94%; max-height: 90vh; }
+    .settings-modal-content .modal-body { padding: 18px 16px; }
 }
-/* ============================================================ */
 
 .theme-buttons { display: flex; flex-direction: column; gap: 12px; padding: 24px; }
 .theme-btn {
@@ -483,11 +501,11 @@ body {
 .slider-container { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
 .settings-slider {
     flex: 1; height: 4px; -webkit-appearance: none;
-    background: var(--progress-bg); border-radius: 5px; outline: none;
+    background: var(--progress-unplayed); border-radius: 5px; outline: none;
 }
 .settings-slider::-webkit-slider-thumb {
     -webkit-appearance: none; width: 14px; height: 14px;
-    background: var(--progress-thumb); border-radius: 50%; cursor: pointer;
+    background: var(--progress-played); border-radius: 50%; cursor: pointer;
 }
 .slider-value { min-width: 45px; font-size: 0.8rem; color: var(--text-primary); }
 .switch-label { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
