@@ -5,16 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=4" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=4" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=5" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=5" type="image/x-icon">
 
-    <!-- ✅ manifest 加版本号，强制浏览器重新拉取 -->
-    <link rel="manifest" href="./manifest.json?v=3">
+    <link rel="manifest" href="./manifest.json?v=4">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=3">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=4">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -34,6 +33,7 @@
             </div>
             <div class="header-buttons">
                 <button class="theme-toggle" v-if="canInstall" @click="installApp">📲 安装应用</button>
+                <button class="theme-toggle" @click="toggleFullscreen">{{ isFullscreen ? '🗗 退出全屏' : '🗖 全屏' }}</button>
                 <button class="theme-toggle" @click="openThemeModal">🎨 主题</button>
                 <button class="theme-toggle" @click="openSettingsModal">⚙️ 设置</button>
                 <button class="theme-toggle" @click="openFeedbackModal">💬 反馈与改进</button>
@@ -58,7 +58,6 @@
                         <input type="text" class="small-input" v-model="playlistUrlInput" placeholder="网易云歌单链接 或 ID (如 12390308466)">
                         <button class="btn btn-outline" @click="loadCustomPlaylist">📋 加载歌单</button>
                     </div>
-                    <!-- ✅ 只保留「我的歌单」 -->
                     <div class="id-parse-group" style="margin-top: 12px; background: transparent; padding: 0; gap: 12px;">
                         <button class="btn btn-outline" style="flex:1;" @click="openMyPlaylistsModal">💿 我的歌单</button>
                     </div>
@@ -78,7 +77,6 @@
                     </div>
                 </div>
 
-                <!-- ✅ 只保留列表，无视图切换 -->
                 <div class="results-header">
                     <span>🎶 歌曲列表</span>
                     <span style="font-size:12px;">点击右侧▶️播放</span>
@@ -175,6 +173,7 @@
         </div>
     </div>
 
+    <!-- 全屏播放器 -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -217,6 +216,7 @@
         </div>
     </div>
 
+    <!-- 主题弹窗 -->
     <div id="themeModal" class="modal" style="display: none;">
         <div class="modal-content theme-modal-content">
             <div class="modal-header">
@@ -233,6 +233,7 @@
         </div>
     </div>
 
+    <!-- 设置弹窗 -->
     <div id="settingsModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 550px;">
             <div class="modal-header">
@@ -242,7 +243,7 @@
             <div class="modal-body">
                 <div class="settings-section">
                     <div class="settings-title">🖼️ 自定义背景图片</div>
-                    <div class="settings-desc">输入图片URL（支持 http/https）</div>
+                    <div class="settings-desc">输入图片URL（支持 http/https），刷新后自动应用</div>
                     <input type="text" v-model="bgImageUrl" class="settings-input" placeholder="https://example.com/background.jpg">
                     <div class="settings-buttons">
                         <button class="btn btn-outline" @click="saveBgImage">应用背景</button>
@@ -258,18 +259,26 @@
                         <option value="standard">标准 (128k)</option>
                     </select>
 
-                    <div class="settings-title" style="margin-top: 20px;">✨ 背景模糊度</div>
-                    <div class="settings-desc">范围 0-100，数值越大越模糊（0 = 不模糊）</div>
+                    <!-- ✅ 新增：主容器透明度 -->
+                    <div class="settings-title" style="margin-top: 20px;">🪟 主容器透明度</div>
+                    <div class="settings-desc">范围 20-100%，控制最外层大容器的透明度</div>
                     <div class="slider-container">
-                        <input type="range" v-model.number="bgBlur" min="0" max="100" step="1" class="settings-slider" @input="saveBgBlur">
-                        <span class="slider-value">{{ bgBlur }}%</span>
+                        <input type="range" v-model.number="containerOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveContainerOpacity">
+                        <span class="slider-value">{{ containerOpacity }}%</span>
                     </div>
 
                     <div class="settings-title" style="margin-top: 20px;">🎴 卡片透明度</div>
-                    <div class="settings-desc">范围 20-100%，数值越大越不透明</div>
+                    <div class="settings-desc">范围 20-100%，控制左栏、播放器、歌词、历史卡片的透明度</div>
                     <div class="slider-container">
                         <input type="range" v-model.number="cardOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveCardOpacity">
                         <span class="slider-value">{{ cardOpacity }}%</span>
+                    </div>
+
+                    <div class="settings-title" style="margin-top: 20px;">✨ 背景模糊度</div>
+                    <div class="settings-desc">范围 0-100，数值越大背景越模糊</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="bgBlur" min="0" max="100" step="1" class="settings-slider" @input="saveBgBlur">
+                        <span class="slider-value">{{ bgBlur }}%</span>
                     </div>
 
                     <div class="settings-title" style="margin-top: 20px;">🎭 卡片遮罩透明度</div>
@@ -291,6 +300,32 @@
                         <span class="switch-text">启用模糊效果</span>
                         <label class="switch">
                             <input type="checkbox" v-model="blurEnabled" @change="saveBlurEnabled">
+                            <span class="slider round"></span>
+                        </label>
+                    </label>
+
+                    <!-- ✅ 新增：屏幕方向 -->
+                    <div class="settings-title" style="margin-top: 20px;">📱 屏幕方向</div>
+                    <div class="settings-desc">需要先进入全屏才能锁定方向，不同浏览器支持程度不同</div>
+                    <div class="settings-buttons">
+                        <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'auto' }" @click="setOrientation('auto')">自动</button>
+                        <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'portrait' }" @click="setOrientation('portrait')">📱 竖屏</button>
+                        <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'landscape' }" @click="setOrientation('landscape')">💻 横屏</button>
+                    </div>
+
+                    <!-- ✅ 新增：全屏 -->
+                    <div class="settings-title" style="margin-top: 20px;">🔲 全屏</div>
+                    <div class="settings-desc">全屏模式下可配合方向锁定使用</div>
+                    <div class="settings-buttons">
+                        <button class="btn btn-outline" @click="toggleFullscreen">{{ isFullscreen ? '退出全屏' : '进入全屏' }}</button>
+                    </div>
+
+                    <div class="settings-title" style="margin-top: 20px;">🚀 进入时自动全屏</div>
+                    <div class="settings-desc">开启后，进入网站后首次点击/触摸屏幕会自动进入全屏</div>
+                    <label class="switch-label">
+                        <span class="switch-text">自动全屏</span>
+                        <label class="switch">
+                            <input type="checkbox" v-model="autoFullscreenOnEnter" @change="saveAutoFullscreen">
                             <span class="slider round"></span>
                         </label>
                     </label>
@@ -323,6 +358,7 @@
         </div>
     </div>
 
+    <!-- 反馈 -->
     <div id="feedbackModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 350px;">
             <div class="modal-header">
@@ -340,6 +376,7 @@
         </div>
     </div>
 
+    <!-- 公告 -->
     <div id="announcementModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 400px;">
             <div class="modal-header">
@@ -358,6 +395,7 @@
         </div>
     </div>
 
+    <!-- VIP -->
     <div id="vipModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -376,6 +414,7 @@
         </div>
     </div>
 
+    <!-- 播放队列 -->
     <div id="playQueueModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -405,6 +444,7 @@
         </div>
     </div>
 
+    <!-- 我的歌单 -->
     <div id="myPlaylistsModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 640px; max-height: 82vh;">
             <div class="modal-header">
@@ -443,6 +483,7 @@
         </div>
     </div>
 
+    <!-- 相似 -->
     <div id="similarSongsModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -470,6 +511,7 @@
         </div>
     </div>
 
+    <!-- MV -->
     <div id="mvPlayerModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
@@ -487,6 +529,7 @@
         </div>
     </div>
 
+    <!-- 评论 -->
     <div id="commentsModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px; max-height: 80vh;">
             <div class="modal-header">
@@ -509,6 +552,7 @@
         </div>
     </div>
 
+    <!-- 睡眠 -->
     <div id="sleepTimerModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 300px;">
             <div class="modal-header">
@@ -529,6 +573,7 @@
         </div>
     </div>
 
+    <!-- iOS 安装 -->
     <div id="iosInstallModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 360px;">
             <div class="modal-header">
@@ -547,6 +592,7 @@
         </div>
     </div>
 
+    <!-- 迷你播放器 -->
     <div id="miniPlayer" class="mini-player" v-show="miniPlayerVisible" @click="restoreFromMini">
         <img :src="currentCover" class="mini-cover" alt="">
         <div class="mini-info">
