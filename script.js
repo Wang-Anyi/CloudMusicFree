@@ -30,7 +30,6 @@ createApp({
         const searchResults = ref([]);
         const loadingSearch = ref(false);
         const searchPerformed = ref(false);
-        const viewMode = ref('list');
 
         const currentSongName = ref('');
         const currentArtist = ref('');
@@ -99,7 +98,6 @@ createApp({
 
         const myPlaylists = ref([]);
         const loadingMyPlaylists = ref(false);
-        const loadingLiked = ref(false);
 
         const createdPlaylists = computed(() => myPlaylists.value.filter(p => !p.subscribed));
         const subscribedPlaylists = computed(() => myPlaylists.value.filter(p => p.subscribed));
@@ -397,7 +395,6 @@ createApp({
             searchResults.value = [];
             searchPerformed.value = true;
             loadingSearch.value = true;
-            viewMode.value = 'list';
             let songsData = null;
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[i];
@@ -974,24 +971,14 @@ createApp({
             ];
         };
 
-        // ============================================================
-        // ✅ 关键重构：歌单加载（旧方式为主 + 自动分页 + 兜底）
-        //    1. playlist/detail 拿 trackIds 和 trackCount（极度稳定）
-        //    2. playlist/track/all?id=xxx&limit=trackCount 一次拿全（旧方式）
-        //    3. 数量不够自动分页 playlist/track/all&limit=1000&offset=xxx
-        //    4. 上面都失败时，才用 song/detail 分批兜底
-        //    每一步都逐个 API 尝试并检查数据有效性，不会因某个 API 返回空而中断
-        // ============================================================
-        const fetchPlaylistTracks = async (playlistId, plName, isCustom = false, forceView = null) => {
+        const fetchPlaylistTracks = async (playlistId, plName, isCustom = false) => {
             searchResults.value = [];
             searchPerformed.value = true;
             loadingSearch.value = true;
-            viewMode.value = forceView || 'list';
 
             const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             const cookieParam = userCookie.value.trim() ? `&cookie=${encodeURIComponent(userCookie.value)}` : '';
 
-            // 遍历 API 请求，返回第一个数据有效的响应
             const tryRequest = async (path) => {
                 for (let i = 0; i < API_LIST.length; i++) {
                     const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
@@ -1009,20 +996,14 @@ createApp({
             try {
                 playErrorMsg.value = `⏳ 正在加载歌单 ${plName}...`;
 
-                // === 第 1 步：playlist/detail 拿 trackIds 和 trackCount ===
                 let trackIds = [];
                 let trackCount = 0;
                 const detailData = await tryRequest(`/playlist/detail?id=${playlistId}`);
                 if (detailData && detailData.playlist) {
                     trackIds = (detailData.playlist.trackIds || []).map(t => t.id);
                     trackCount = trackIds.length || detailData.playlist.trackCount || 0;
-                    // 有些 API 的 playlist.detail 会顺带返回完整 songs 列表
-                    if (detailData.playlist.songs && detailData.playlist.songs.length) {
-                        // 先保留，如果 track/all 失败可以直接用
-                    }
                 }
 
-                // === 第 2 步：playlist/track/all 一次拿全 ===
                 let rawSongs = [];
                 if (trackCount > 0) {
                     const allData = await tryRequest(`/playlist/track/all?id=${playlistId}&limit=${trackCount}&offset=0`);
@@ -1030,7 +1011,6 @@ createApp({
                         rawSongs = allData.songs;
                     }
                 } else {
-                    // 不知道总数，先试默认数量
                     const allData = await tryRequest(`/playlist/track/all?id=${playlistId}`);
                     if (allData && allData.songs && allData.songs.length) {
                         rawSongs = allData.songs;
@@ -1038,7 +1018,6 @@ createApp({
                     }
                 }
 
-                // === 第 3 步：如果数量不够，分页补齐 ===
                 if (trackCount > 0 && rawSongs.length < trackCount) {
                     const batchSize = 1000;
                     let offset = rawSongs.length;
@@ -1050,12 +1029,11 @@ createApp({
                             offset += pageData.songs.length;
                             playErrorMsg.value = `⏳ 已加载 ${rawSongs.length}/${trackCount} 首...`;
                         } else {
-                            break; // 这个 API 不支持 offset 分页，进入第 4 步兜底
+                            break;
                         }
                     }
                 }
 
-                // === 第 4 步：终极兜底（song/detail 分批） ===
                 if ((!rawSongs || !rawSongs.length) && trackIds.length) {
                     const collected = [];
                     const batchSize = 200;
@@ -1078,7 +1056,6 @@ createApp({
                     if (collected.length) rawSongs = collected;
                 }
 
-                // === 格式化输出 ===
                 if (rawSongs && rawSongs.length) {
                     const songList = rawSongs.map(track => {
                         let picUrl = extractCover(track);
@@ -1185,32 +1162,9 @@ createApp({
         const openMyPlaylistsModal = () => { loadMyPlaylists(true); };
         const openMyPlaylist = (pl) => {
             closeMyPlaylistsModal();
-            fetchPlaylistTracks(pl.id, pl.name, false, 'grid');
+            fetchPlaylistTracks(pl.id, pl.name);
         };
         const closeMyPlaylistsModal = () => { document.getElementById('myPlaylistsModal').style.display = 'none'; };
-
-        const loadLikedSongs = async () => {
-            if (!userCookie.value.trim()) {
-                playErrorMsg.value = '请先在设置中填写 Cookie';
-                setTimeout(() => { if (playErrorMsg.value === '请先在设置中填写 Cookie') playErrorMsg.value = ''; }, 2500);
-                return;
-            }
-            loadingLiked.value = true;
-            try {
-                if (!myPlaylists.value.length) {
-                    const ok = await loadMyPlaylists(false);
-                    if (!ok) throw new Error('无法加载你的歌单，请检查 Cookie');
-                }
-                let liked = myPlaylists.value.find(pl => pl.specialType === 5);
-                if (!liked) liked = myPlaylists.value.find(pl => /喜欢的音乐/.test(pl.name));
-                if (!liked) throw new Error('未找到「我喜欢的音乐」歌单，请确认 Cookie 有效');
-                await fetchPlaylistTracks(liked.id, liked.name || '我喜欢的音乐', false, 'grid');
-            } catch (e) {
-                playErrorMsg.value = e.message || '加载「我喜欢的音乐」失败';
-            } finally {
-                loadingLiked.value = false;
-            }
-        };
 
         let pendingVipSong = null;
         const showVipModal = (song) => {
@@ -1297,7 +1251,6 @@ createApp({
 
         return {
             searchKeyword, songIdInput, playlistUrlInput, searchResults, loadingSearch, searchPerformed,
-            viewMode,
             currentSongName, currentArtist, currentCover, loadingPlay, playErrorMsg, audioPlayer,
             isPlaying, currentTime, duration, progressValue, volumeValue,
             lyricsLines, currentLyricIndex, lyricsContainer, playHistory, recommendPlaylists,
@@ -1328,7 +1281,6 @@ createApp({
             qualityLevel, saveQualityLevel,
             myPlaylists, loadingMyPlaylists, loadMyPlaylists,
             createdPlaylists, subscribedPlaylists, openMyPlaylist, openMyPlaylistsModal, closeMyPlaylistsModal,
-            loadingLiked, loadLikedSongs,
             canInstall, installApp
         };
     }
