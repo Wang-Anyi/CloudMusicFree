@@ -1,8 +1,6 @@
 const { createApp, ref, onMounted, nextTick, computed, watch } = Vue;
 
-/* ============================================================
-   动态渐变背景（保留原有）
-   ============================================================ */
+/* ========== 动态渐变背景 ========== */
 const extractColorFromImage = (url) => {
     return new Promise((resolve) => {
         const img = new Image();
@@ -28,115 +26,9 @@ const setDynamicGradient = async (coverUrl) => {
     }
 };
 
-/* ============================================================
-   多 API 配置（区分 meting / netease 风格）
-   ============================================================ */
-const API_PROVIDERS = [
-    { base: 'https://csm.sayqz.com/api/',               style: 'meting' },
-    { base: 'https://api.i-meto.com/meting/api',        style: 'meting' },
-    { base: 'https://api.injahow.cn/meting/',           style: 'meting' },
-    { base: 'https://meting-api-pi-one.vercel.app/api', style: 'meting' },
-    { base: 'https://api.liyefeng.top',                 style: 'netease' },
-    { base: 'https://ncm.zhenxin.me',                   style: 'netease' },
-    { base: 'https://zm.i9mr.com',                      style: 'netease' },
-    { base: 'https://music.mcseekeri.com',              style: 'netease' },
-    { base: 'https://zm.wwoyun.cn',                     style: 'netease' },
-    { base: 'https://api.injahow.cn',                   style: 'netease' }
-];
-let currentApiIndex = 0;
-
-/* ============================================================
-   统一请求函数：自动故障转移 + 两种风格适配 + url 特殊处理
-   ============================================================ */
-const requestWithFallback = async (type, params = {}, options = {}) => {
-    const errors = [];
-    const timeout = options.timeout || 10000;
-    const total = API_PROVIDERS.length;
-
-    for (let i = 0; i < total; i++) {
-        const provider = API_PROVIDERS[(currentApiIndex + i) % total];
-        try {
-            let url;
-            if (provider.style === 'meting') {
-                const qs = new URLSearchParams({ server: 'netease', type, ...params });
-                url = `${provider.base}?${qs.toString()}`;
-            } else {
-                const pathMap = {
-                    search: '/search',
-                    url: '/song/url',
-                    lyric: '/lyric',
-                    detail: '/song/detail',
-                    simi: '/simi/song',
-                    mv: '/mv/url',
-                    comment: '/comment/music',
-                    playlistDetail: '/playlist/detail',
-                    playlistTracks: '/playlist/track/all'
-                };
-                const paramMap = {
-                    search: { keywords: params.s || params.keywords || '', limit: params.limit || 30 },
-                    url: { id: params.id },
-                    lyric: { id: params.id },
-                    detail: { ids: params.ids || params.id },
-                    simi: { id: params.id },
-                    mv: { id: params.id },
-                    comment: { id: params.id, limit: params.limit || 20 },
-                    playlistDetail: { id: params.id },
-                    playlistTracks: { id: params.id, limit: params.limit || 1000 }
-                };
-                const qs = new URLSearchParams(paramMap[type] || {});
-                url = `${provider.base}${pathMap[type]}?${qs.toString()}`;
-            }
-
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), timeout);
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timer);
-
-            if (!res.ok) {
-                errors.push(`${provider.base} → HTTP ${res.status}`);
-                continue;
-            }
-
-            // 播放地址特殊处理
-            if (type === 'url') {
-                const ct = res.headers.get('content-type') || '';
-                if (ct.includes('json')) {
-                    const data = await res.json();
-                    const u = data.url || data.data?.[0]?.url;
-                    if (u) {
-                        currentApiIndex = (currentApiIndex + i) % total;
-                        return { data: { url: u.startsWith('//') ? 'https:' + u : u }, provider };
-                    }
-                } else {
-                    // 直接是音频流或重定向
-                    const finalUrl = res.url;
-                    try { res.body?.cancel(); } catch (e) {}
-                    if (finalUrl) {
-                        currentApiIndex = (currentApiIndex + i) % total;
-                        return { data: { url: finalUrl }, provider };
-                    }
-                }
-                errors.push(`${provider.base} → 无有效地址`);
-            } else {
-                const data = await res.json();
-                currentApiIndex = (currentApiIndex + i) % total;
-                console.log(`[API] ✅ 成功: ${provider.base} (${type})`);
-                return { data, provider };
-            }
-        } catch (e) {
-            errors.push(`${provider.base} → ${e.message}`);
-        }
-    }
-    console.error('所有接口失败:', errors);
-    throw new Error('所有接口均不可用');
-};
-
-/* ============================================================
-   Vue 应用
-   ============================================================ */
 createApp({
     setup() {
-        // ========== 响应式数据（与之前完全一致） ==========
+        // ========== 响应式数据 ==========
         const searchKeyword = ref('');
         const songIdInput = ref('');
         const playlistUrlInput = ref('');
@@ -200,6 +92,24 @@ createApp({
         const maskOpacity = ref(30);
         const glassIntensity = ref(12);
         
+        // ✅ 新增：用户 Cookie（用于 VIP 解析）
+        const userCookie = ref('');
+        
+        // ========== API 列表 ==========
+        const API_LIST = [
+            'https://meting-api-pi-one.vercel.app',
+            'https://api-enhanced-delta-six.vercel.app',
+            'https://api.liyefeng.top',
+            'https://ncm.zhenxin.me',
+            'https://zm.i9mr.com',
+            'https://music.mcseekeri.com',
+            'https://zm.wwoyun.cn',
+            'https://api.injahow.cn',
+            'https://netease-api.cyan9527.com',
+            'https://music.ghser.com'
+        ];
+        let currentApiIndex = 0;
+        
         // ========== 辅助函数 ==========
         const formatDuration = (ms) => {
             if (!ms) return '00:00';
@@ -223,6 +133,12 @@ createApp({
         
         const extractCover = (item) => {
             return item.al?.picUrl || item.album?.picUrl || item.cover || item.picUrl || '';
+        };
+        
+        // ✅ VIP 判断（fee=1 或 4 视为 VIP）
+        const checkIsVip = (item) => {
+            const fee = item?.fee ?? 0;
+            return fee === 1 || fee === 4;
         };
         
         const extractSongId = (input) => {
@@ -341,7 +257,8 @@ createApp({
         
         const fetchLyrics = async (songId) => {
             try {
-                const { data } = await requestWithFallback('lyric', { id: songId }, { timeout: 8000 });
+                const res = await requestWithFallback(`/lyric?id=${songId}`, { timeout: 8000 });
+                const data = res.data;
                 const lrcStr =
                     data.lrc?.lyric ||
                     (typeof data.lrc === 'string' ? data.lrc : '') ||
@@ -351,7 +268,6 @@ createApp({
                 lyricsLines.value = parsed;
                 fullscreenLyrics.value = parsed;
                 
-                // 逐字歌词（尝试解析括号时间）
                 const wordLines = lrcStr.split('\n');
                 const words = [];
                 const timeRegex = /\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/;
@@ -416,7 +332,77 @@ createApp({
             }
         };
         
-        // ========== 搜索（核心解析已重构） ==========
+        // ========== 通用请求（自动携带 Cookie） ==========
+        const requestWithFallback = async (urlPath, options = {}) => {
+            const maxRetries = API_LIST.length;
+            let lastError = null;
+            for (let i = 0; i < maxRetries; i++) {
+                const apiIndex = (currentApiIndex + i) % maxRetries;
+                const apiBase = API_LIST[apiIndex];
+                let fullUrl = `${apiBase}${urlPath}`;
+                // ✅ 如果存在 userCookie，则附加 cookie 参数
+                if (userCookie.value.trim()) {
+                    const sep = fullUrl.includes('?') ? '&' : '?';
+                    fullUrl += `${sep}cookie=${encodeURIComponent(userCookie.value)}`;
+                }
+                try {
+                    const response = await axios.get(fullUrl, { timeout: options.timeout || 15000, ...options });
+                    currentApiIndex = apiIndex;
+                    console.log(`[API] ✅ 成功: ${apiBase}`);
+                    return response;
+                } catch (err) {
+                    console.warn(`[API] ❌ ${apiBase} 失败:`, err.message);
+                    lastError = err;
+                }
+            }
+            throw lastError || new Error('所有 API 均不可用');
+        };
+        
+        // ========== 获取真实封面 ==========
+        const fetchRealCover = async (songId) => {
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                try {
+                    let url = `${apiBase}/song/detail?ids=${songId}`;
+                    if (userCookie.value.trim()) {
+                        url += `&cookie=${encodeURIComponent(userCookie.value)}`;
+                    }
+                    const res = await axios.get(url, { timeout: 5000 });
+                    let detail = res.data?.songs?.[0] || res.data?.data?.[0];
+                    if (detail) {
+                        const coverUrl = extractCover(detail);
+                        if (coverUrl && coverUrl.startsWith('http')) return toHttps(coverUrl);
+                    }
+                } catch (e) {}
+            }
+            return null;
+        };
+        
+        // ========== 图片加载 ==========
+        const onImageLoad = (event) => {
+            const img = event.target;
+            const wrapper = img.closest('.cover-wrapper');
+            if (wrapper) {
+                const loadingDiv = wrapper.querySelector('.cover-loading');
+                if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+            if (img.classList && img.classList.contains('cover-large')) {
+                setDynamicGradient(img.src);
+            }
+        };
+        const onImageError = (event) => {
+            const img = event.target;
+            if (!img.src.includes('cdn-icons-png.flaticon.com')) {
+                img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+            }
+            const wrapper = img.closest('.cover-wrapper');
+            if (wrapper) {
+                const loadingDiv = wrapper.querySelector('.cover-loading');
+                if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+        };
+        
+        // ========== 搜索 ==========
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -424,51 +410,57 @@ createApp({
             searchPerformed.value = true;
             loadingSearch.value = true;
             
-            try {
-                const { data } = await requestWithFallback('search', { s: keyword, limit: 30 }, { timeout: 12000 });
-                const rawSongs =
-                    data.result?.songs ||
-                    data.songs ||
-                    data.data ||
-                    (Array.isArray(data) ? data : []);
-                
-                if (!rawSongs.length) {
-                    searchResults.value = [];
-                    loadingSearch.value = false;
-                    return;
-                }
-                
-                const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                searchResults.value = rawSongs.map(item => {
-                    const id = item.id || item.song_id;
-                    const name = item.name || item.title || '未知';
-                    const artist = (item.artists || item.ar || []).map(a => a.name || a).join(' / ') || item.artist || '未知';
-                    const duration = item.duration || item.dt || 0;
-                    const fee = item.fee ?? 0;
-                    const isVip = fee === 1 || fee === 4;
-                    let picUrl = extractCover(item);
-                    if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl);
-                    else picUrl = defaultCover;
-                    return { id: String(id), name, artist, duration, picUrl, isVip, loadingCover: false };
-                });
-                
-                // 补全缺失封面
-                fillMissingCovers();
-            } catch (e) {
-                console.error('搜索失败', e);
+            let songsData = null;
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[i];
+                try {
+                    let url = `${apiBase}/search?keywords=${encodeURIComponent(keyword)}&limit=30`;
+                    if (userCookie.value.trim()) {
+                        url += `&cookie=${encodeURIComponent(userCookie.value)}`;
+                    }
+                    const res = await axios.get(url, { timeout: 10000 });
+                    let songs = res.data?.result?.songs || res.data?.data || (Array.isArray(res.data) ? res.data : null);
+                    if (songs && songs.length) {
+                        songsData = songs;
+                        break;
+                    }
+                } catch (e) { console.warn(e); }
+            }
+            
+            if (!songsData) {
                 searchResults.value = [];
                 playErrorMsg.value = '所有搜索接口均不可用';
-            } finally {
                 loadingSearch.value = false;
+                return;
             }
+            
+            const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+            const tempResults = songsData.map(item => {
+                const id = item.id || item.song_id;
+                const name = item.name || item.title || '未知';
+                const artist = (item.artists || item.ar || []).map(a => a.name || a).join(' / ') || item.artist || '未知';
+                const dur = item.duration || item.dt || 0;
+                const isVip = checkIsVip(item);
+                let picUrl = extractCover(item);
+                if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl);
+                else picUrl = defaultCover;
+                return { id: String(id), name, artist, duration: dur, picUrl, isVip, loadingCover: false };
+            });
+            searchResults.value = tempResults;
+            loadingSearch.value = false;
+            fillMissingCovers();
         };
         
         const fillMissingCovers = async () => {
             const missing = searchResults.value.filter(s => !s.picUrl || s.picUrl.includes('flaticon'));
             for (const song of missing.slice(0, 10)) {
                 try {
-                    const { data } = await requestWithFallback('detail', { ids: song.id }, { timeout: 5000 });
-                    const detail = data.songs?.[0] || data.data?.[0] || (Array.isArray(data) ? data[0] : null);
+                    let url = `${API_LIST[0]}/song/detail?ids=${song.id}`;
+                    if (userCookie.value.trim()) {
+                        url += `&cookie=${encodeURIComponent(userCookie.value)}`;
+                    }
+                    const res = await axios.get(url, { timeout: 5000 });
+                    const detail = res.data?.songs?.[0] || res.data?.data?.[0];
                     if (detail) {
                         const cover = extractCover(detail);
                         if (cover) {
@@ -480,20 +472,41 @@ createApp({
             }
         };
         
-        // ========== 播放地址 ==========
+        // ========== 播放地址（携带 Cookie） ==========
         const getSongUrl = async (songId) => {
-            const { data } = await requestWithFallback('url', { id: songId }, { timeout: 15000 });
-            const url = data.url;
-            if (!url) throw new Error('未获取到播放地址');
-            return toHttps(url);
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                try {
+                    let url = `${apiBase}/song/url?id=${songId}`;
+                    if (userCookie.value.trim()) {
+                        url += `&cookie=${encodeURIComponent(userCookie.value)}`;
+                    }
+                    const res = await axios.get(url, { timeout: 20000 });
+                    let musicUrl = res.data?.data?.[0]?.url || res.data?.url || (typeof res.data === 'string' ? res.data : null);
+                    if (musicUrl) {
+                        currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                        return toHttps(musicUrl);
+                    }
+                } catch (err) {}
+            }
+            throw new Error('无法获取播放地址');
         };
         
         // ========== 歌曲详情 ==========
         const getSongDetail = async (songId) => {
-            const { data } = await requestWithFallback('detail', { ids: songId }, { timeout: 8000 });
-            const detail = data.songs?.[0] || data.data?.[0] || (Array.isArray(data) ? data[0] : null);
-            if (!detail) throw new Error('无法获取歌曲详情');
-            return detail;
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                try {
+                    let url = `${apiBase}/song/detail?ids=${songId}`;
+                    if (userCookie.value.trim()) {
+                        url += `&cookie=${encodeURIComponent(userCookie.value)}`;
+                    }
+                    const res = await axios.get(url, { timeout: 8000 });
+                    let detail = res.data?.songs?.[0] || res.data?.data?.[0];
+                    if (detail) return detail;
+                } catch (err) {}
+            }
+            throw new Error('无法获取歌曲详情');
         };
         
         // ========== 播放核心 ==========
@@ -642,29 +655,44 @@ createApp({
         const restoreFromMini = () => { miniPlayerVisible.value = false; localStorage.setItem('miniPlayerVisible', false); };
         const closeMiniPlayer = () => { miniPlayerVisible.value = false; localStorage.setItem('miniPlayerVisible', false); };
         
-        // ========== 相似/MV/评论/睡眠/分享（使用新请求函数） ==========
+        // ========== 相似歌曲 ==========
         const showSimilarSongs = async () => {
             if (!currentSongId) { playErrorMsg.value = '请先播放一首歌曲'; return; }
             try {
-                const { data } = await requestWithFallback('simi', { id: currentSongId }, { timeout: 8000 });
+                const res = await requestWithFallback(`/simi/song?id=${currentSongId}`, { timeout: 8000 });
+                const data = res.data;
                 const list = data.songs || data.data || [];
-                similarSongs.value = list.map(s => ({
-                    id: s.id,
-                    name: s.name,
-                    artist: (s.artists || s.ar || []).map(a => a.name || a).join('/'),
-                    picUrl: s.album?.picUrl || s.al?.picUrl || ''
-                }));
+                similarSongs.value = list.map(s => {
+                    const artistArr = s.artists || s.ar || [];
+                    const artistStr = artistArr.map(a => a.name || a).join('/');
+                    const isVip = checkIsVip(s);
+                    return {
+                        id: s.id,
+                        name: s.name,
+                        artist: artistStr,
+                        picUrl: s.album?.picUrl || s.al?.picUrl || '',
+                        isVip
+                    };
+                });
                 document.getElementById('similarSongsModal').style.display = 'flex';
             } catch (e) { playErrorMsg.value = '获取相似歌曲失败'; }
         };
-        const playSimilarSong = (song) => { closeSimilarModal(); playSongById(song.id, song.name, song.artist, song.picUrl); };
+        const playSimilarSong = (song) => {
+            if (song.isVip) {
+                showVipModal(song);
+                return;
+            }
+            closeSimilarModal();
+            playSongById(song.id, song.name, song.artist, song.picUrl);
+        };
         const closeSimilarModal = () => { document.getElementById('similarSongsModal').style.display = 'none'; };
         
+        // ========== MV / 评论 / 睡眠 / 分享 ==========
         const showMV = async () => {
             if (!currentSongId) { playErrorMsg.value = '请先播放一首歌曲'; return; }
             try {
-                const { data } = await requestWithFallback('mv', { id: currentSongId }, { timeout: 8000 });
-                let mvUrl = data.data?.url || data.url;
+                const res = await requestWithFallback(`/mv/url?id=${currentSongId}`, { timeout: 8000 });
+                let mvUrl = res.data?.data?.url || res.data?.url;
                 if (mvUrl) {
                     document.getElementById('mvIframe').src = mvUrl;
                     document.getElementById('mvPlayerModal').style.display = 'flex';
@@ -676,8 +704,8 @@ createApp({
         const showComments = async () => {
             if (!currentSongId) { playErrorMsg.value = '请先播放一首歌曲'; return; }
             try {
-                const { data } = await requestWithFallback('comment', { id: currentSongId, limit: 20 }, { timeout: 8000 });
-                comments.value = data.comments || data.hotComments || [];
+                const res = await requestWithFallback(`/comment/music?id=${currentSongId}&limit=20`, { timeout: 8000 });
+                comments.value = res.data?.comments || res.data?.hotComments || [];
                 document.getElementById('commentsModal').style.display = 'flex';
             } catch (e) { playErrorMsg.value = '获取评论失败'; }
         };
@@ -841,7 +869,7 @@ createApp({
         };
         const fullscreenTogglePlayPause = togglePlayPause;
         
-        // ========== 背景设置（原样保留） ==========
+        // ========== 背景设置 ==========
         const bodyBackgroundStyle = computed(() => {
             if (bgImageUrl.value && bgImageUrl.value.trim()) {
                 return { backgroundImage: `url(${bgImageUrl.value})`, backgroundSize: 'cover', backgroundPosition: 'center center', backgroundAttachment: 'fixed', backgroundRepeat: 'no-repeat' };
@@ -863,6 +891,9 @@ createApp({
             if (sg !== null) { glassIntensity.value = parseInt(sg); document.querySelector('.app-container').style.backdropFilter = `blur(${glassIntensity.value}px)`; }
             const sm = localStorage.getItem('miniPlayerVisible');
             if (sm === 'true') miniPlayerVisible.value = true;
+            // ✅ 加载保存的 Cookie
+            const savedCookie = localStorage.getItem('neteaseCookie');
+            if (savedCookie) userCookie.value = savedCookie;
         };
         const saveBgImage = () => {
             if (!bgImageUrl.value.trim()) { playErrorMsg.value = '请输入图片URL'; return; }
@@ -878,6 +909,13 @@ createApp({
         const saveCardOpacity = () => { localStorage.setItem('cardOpacity', cardOpacity.value); document.body.style.setProperty('--card-opacity', cardOpacity.value / 100); };
         const saveMaskOpacity = () => { localStorage.setItem('maskOpacity', maskOpacity.value); document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100); };
         const saveGlassIntensity = () => { localStorage.setItem('glassIntensity', glassIntensity.value); document.querySelector('.app-container').style.backdropFilter = `blur(${glassIntensity.value}px)`; };
+        
+        // ✅ 保存 Cookie
+        const saveCookie = () => {
+            localStorage.setItem('neteaseCookie', userCookie.value);
+            playErrorMsg.value = '✅ Cookie 已保存';
+            setTimeout(() => { if (playErrorMsg.value === '✅ Cookie 已保存') playErrorMsg.value = ''; }, 2000);
+        };
         
         const exportSettings = () => {
             const s = { theme: currentTheme.value, bgImageUrl: bgImageUrl.value, bgBlur: bgBlur.value, cardOpacity: cardOpacity.value, maskOpacity: maskOpacity.value, glassIntensity: glassIntensity.value, blurEnabled: blurEnabled.value };
@@ -925,16 +963,17 @@ createApp({
             }
         };
         
-        // ========== 歌单（使用新请求函数） ==========
+        // ========== 歌单 ==========
         const loadPlaylists = async () => {
             const ids = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
             const randomIds = ids.sort(() => 0.5 - Math.random()).slice(0, 4);
             const plist = [];
             for (const pid of randomIds) {
                 try {
-                    const { data } = await requestWithFallback('playlistDetail', { id: pid }, { timeout: 8000 });
-                    const pl = data.playlist || data;
-                    if (pl) plist.push({ id: pl.id, name: pl.name, coverImgUrl: toHttps(pl.coverImgUrl || ''), trackCount: pl.trackCount || 0 });
+                    const res = await requestWithFallback(`/playlist/detail?id=${pid}`, { timeout: 8000 });
+                    if (res.data && res.data.playlist) {
+                        plist.push({ id: res.data.playlist.id, name: res.data.playlist.name, coverImgUrl: toHttps(res.data.playlist.coverImgUrl || ''), trackCount: res.data.playlist.trackCount });
+                    }
                 } catch (e) { console.warn(e); }
             }
             recommendPlaylists.value = plist.length ? plist : [
@@ -948,27 +987,31 @@ createApp({
             searchPerformed.value = true;
             loadingSearch.value = true;
             try {
-                const { data } = await requestWithFallback('playlistTracks', { id: playlistId, limit: 1000 }, { timeout: 15000 });
-                const tracks = data.songs || data.data || [];
-                const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                const songList = tracks.map(track => {
-                    const fee = track.fee ?? 0;
-                    const isVip = fee === 1 || fee === 4;
-                    let picUrl = track.al?.picUrl || track.album?.picUrl || '';
-                    if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl); else picUrl = defaultCover;
-                    return { id: String(track.id), name: track.name, artist: (track.ar || []).map(a => a.name).join('/'), duration: track.dt, picUrl, isVip, loadingCover: false };
-                });
-                searchResults.value = songList;
-                playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
-                if (isCustom) {
-                    queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl }));
-                    currentQueueIndex = -1;
-                    saveQueueToLocal();
-                    playErrorMsg.value += ' 已加入播放队列';
+                const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=1000`, { timeout: 15000 });
+                if (res.data && res.data.songs) {
+                    const tracks = res.data.songs;
+                    const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+                    const songList = tracks.map(track => {
+                        const isVip = checkIsVip(track);
+                        let picUrl = extractCover(track);
+                        if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl); else picUrl = defaultCover;
+                        return { id: String(track.id), name: track.name, artist: (track.ar || []).map(a => a.name).join('/'), duration: track.dt, picUrl, isVip, loadingCover: false };
+                    });
+                    searchResults.value = songList;
+                    playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
+                    if (isCustom) {
+                        queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl }));
+                        currentQueueIndex = -1;
+                        saveQueueToLocal();
+                        playErrorMsg.value += ' 已加入播放队列';
+                    }
+                } else {
+                    searchResults.value = [];
+                    playErrorMsg.value = '歌单加载失败';
                 }
             } catch (e) {
                 searchResults.value = [];
-                playErrorMsg.value = '歌单加载失败';
+                playErrorMsg.value = '歌单接口异常';
             } finally {
                 loadingSearch.value = false;
             }
@@ -984,13 +1027,27 @@ createApp({
         
         // ========== VIP 弹窗 ==========
         let pendingVipSong = null;
-        const showVipModal = (song) => { pendingVipSong = song; document.getElementById('vipModal').style.display = 'flex'; };
-        const hideVipModal = () => { document.getElementById('vipModal').style.display = 'none'; pendingVipSong = null; };
-        const goToNetEase = () => { if (pendingVipSong && pendingVipSong.id) window.open(`https://music.163.com/song?id=${pendingVipSong.id}`, '_blank'); hideVipModal(); };
+        const showVipModal = (song) => {
+            pendingVipSong = song;
+            document.getElementById('vipModal').style.display = 'flex';
+        };
+        const hideVipModal = () => {
+            document.getElementById('vipModal').style.display = 'none';
+            pendingVipSong = null;
+        };
+        const goToNetEase = () => {
+            if (pendingVipSong && pendingVipSong.id) {
+                window.open(`https://music.163.com/song?id=${pendingVipSong.id}`, '_blank');
+            }
+            hideVipModal();
+        };
         
         const handlePlayClick = (song) => {
-            if (song.isVip) showVipModal(song);
-            else playSongById(song.id, song.name, song.artist, song.picUrl);
+            if (song.isVip) {
+                showVipModal(song);
+            } else {
+                playSongById(song.id, song.name, song.artist, song.picUrl);
+            }
         };
         
         const parseById = async () => {
@@ -998,8 +1055,7 @@ createApp({
             if (!id) return alert('请输入正确的歌曲ID或链接');
             try {
                 const detail = await getSongDetail(id);
-                const fee = detail.fee ?? 0;
-                const isVip = fee === 1 || fee === 4;
+                const isVip = checkIsVip(detail);
                 let picUrl = extractCover(detail);
                 if (picUrl) picUrl = toHttps(picUrl); else picUrl = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
                 const song = { id: String(detail.id), name: detail.name, artist: (detail.ar || []).map(a => a.name).join('/'), picUrl, isVip };
@@ -1063,7 +1119,7 @@ createApp({
             formatDuration, formatTime, searchSongs, parseById,
             togglePlayPause, stopAudio, updateProgress, onLoadedMetadata, seekAudio, changeVolume,
             onAudioEnded, onAudioError, loadPlaylists, fetchPlaylistTracks, loadCustomPlaylist,
-            handlePlayClick, downloadCurrentSong, onImageLoad: (e) => { const img = e.target; const w = img.closest('.cover-wrapper'); if (w) { const l = w.querySelector('.cover-loading'); if (l) l.style.display = 'none'; } if (img.classList && img.classList.contains('cover-large')) setDynamicGradient(img.src); }, onImageError: (e) => { const img = e.target; if (!img.src.includes('flaticon')) img.src = 'https://cdn-icons-png.flaticon.com/512/727/727245.png'; const w = img.closest('.cover-wrapper'); if (w) { const l = w.querySelector('.cover-loading'); if (l) l.style.display = 'none'; } },
+            handlePlayClick, downloadCurrentSong, onImageLoad, onImageError,
             openFullscreenPlayer, closeFullscreenPlayer,
             fullscreenCover, fullscreenSongName, fullscreenArtist,
             fullscreenLyrics, fullscreenLyricIndex, fullscreenCurrentTime,
@@ -1082,7 +1138,8 @@ createApp({
             comments, showComments, closeCommentsModal,
             openSleepTimerModal, closeSleepModal, setSleepTimer, cancelSleepTimer,
             shareCurrentSong, applyCustomFont, exportSettings,
-            showVipModal, hideVipModal, goToNetEase, playSongById
+            showVipModal, hideVipModal, goToNetEase, playSongById,
+            userCookie, saveCookie
         };
     }
 }).mount('#app');
