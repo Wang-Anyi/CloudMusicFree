@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=13" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=13" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=16" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=16" type="image/x-icon">
 
-    <link rel="manifest" href="./manifest.json?v=12">
+    <link rel="manifest" href="./manifest.json?v=15">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=12">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=15">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -66,7 +66,7 @@
                     </div>
                     <div class="playlist-grid">
                         <div class="playlist-item" v-for="pl in recommendPlaylists" :key="pl.id" @click="fetchPlaylistTracks(pl.id, pl.name)">
-                            <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=pl'" class="pl-cover" alt="cover">
+                            <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=pl'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer">
                             <div class="pl-name">{{ pl.name }}</div>
                             <div class="pl-count">📀 {{ pl.trackCount || 0 }}首</div>
                         </div>
@@ -82,7 +82,7 @@
                     <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
                         <div class="song-info">
                             <div class="cover-wrapper">
-                                <img class="song-cover" :src="song.picUrl" :data-id="song.id" @load="onImageLoad($event)" @error="onImageError($event)" alt="cover">
+                                <img class="song-cover" :src="song.picUrl" :data-id="song.id" loading="lazy" referrerpolicy="no-referrer" @load="onImageLoad($event)" @error="onImageError($event)" alt="cover">
                                 <div class="cover-loading" v-if="song.loadingCover">📷</div>
                             </div>
                             <div class="song-details">
@@ -110,7 +110,7 @@
                         <button class="fullscreen-btn" @click="openFullscreenPlayer">⛶</button>
                     </div>
                     <div class="now-playing">
-                        <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover" @load="onImageLoad($event)">
+                        <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover" referrerpolicy="no-referrer" @load="onImageLoad($event)">
                         <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
                         <div class="player-controls">
                             <div class="progress-bar-container">
@@ -125,9 +125,10 @@
                         </div>
                         <audio ref="audioPlayer" @timeupdate="updateProgress" @loadedmetadata="onLoadedMetadata" @ended="onAudioEnded" @error="onAudioError" style="display:none;"></audio>
                         <div class="audio-control-buttons">
-                            <button class="ctrl-btn icon-btn" @click="playPrev">⏮️</button>
+                            <button class="ctrl-btn icon-btn" @click="userPrev">⏮️</button>
                             <button class="ctrl-btn icon-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️' : '▶️' }}</button>
-                            <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
+                            <button class="ctrl-btn icon-btn" @click="userNext">⏭️</button>
+                            <button class="ctrl-btn icon-btn loop-mode-btn" @click="toggleLoopMode" :title="loopModeLabel">{{ loopModeIcon }}</button>
                             <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                         </div>
                         <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
@@ -172,7 +173,7 @@
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
             <div class="fullscreen-content">
                 <div class="fullscreen-cover">
-                    <img :src="fullscreenCover" alt="cover">
+                    <img :src="fullscreenCover" alt="cover" referrerpolicy="no-referrer">
                 </div>
                 <div class="fullscreen-lyrics">
                     <div class="fullscreen-lyrics-header">
@@ -181,7 +182,10 @@
                     </div>
                     <div class="fullscreen-lyrics-scroll" ref="fullscreenLyricsContainer">
                         <div v-if="fullscreenLyrics.length">
-                            <div v-for="(line, idx) in fullscreenLyrics" :key="idx" :class="['fullscreen-lyric-line', { 'active': fullscreenLyricIndex === idx }]">
+                            <div v-for="(line, idx) in fullscreenLyrics" :key="idx"
+                                 :class="['fullscreen-lyric-line', { 'active': fullscreenLyricIndex === idx }]"
+                                 @pointerdown="onLyricPointerDown"
+                                 @click="seekToLyric(line.time, $event)">
                                 <div class="lyric-original">{{ line.text }}</div>
                                 <div class="lyric-trans" v-if="line.trans">{{ line.trans }}</div>
                             </div>
@@ -201,28 +205,56 @@
                     <input type="range" v-model="volumeValue" @input="changeVolume" min="0" max="1" step="0.01">
                 </div>
                 <div class="fullscreen-buttons">
-                    <button class="ctrl-btn icon-btn" @click="playPrev">⏮️</button>
+                    <button class="ctrl-btn icon-btn" @click="userPrev">⏮️</button>
                     <button class="ctrl-btn icon-btn" @click="fullscreenTogglePlayPause">{{ fullscreenIsPlaying ? '⏸️' : '▶️' }}</button>
-                    <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
+                    <button class="ctrl-btn icon-btn" @click="userNext">⏭️</button>
+                    <button class="ctrl-btn icon-btn loop-mode-btn" @click="toggleLoopMode" :title="loopModeLabel">{{ loopModeIcon }}</button>
                     <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 主题弹窗 -->
+    <!-- 主题弹窗（14 套预设 + 自定义） -->
     <div id="themeModal" class="modal" style="display: none;">
         <div class="modal-content theme-modal-content">
             <div class="modal-header">
-                <span>🎨 选择主题颜色</span>
+                <span>🎨 选择主题</span>
                 <button class="modal-close" id="closeThemeModalBtn">&times;</button>
             </div>
-            <div class="theme-buttons">
-                <button class="theme-btn theme-default" @click="setTheme('theme-default')">🌿 默认暖色</button>
-                <button class="theme-btn theme-dark" @click="setTheme('theme-dark')">🌙 暗夜黑</button>
-                <button class="theme-btn theme-ocean" @click="setTheme('theme-ocean')">💙 海洋绿</button>
-                <button class="theme-btn theme-purple" @click="setTheme('theme-purple')">💜 梦幻紫</button>
-                <button class="theme-btn theme-sunset" @click="setTheme('theme-sunset')">🧡 日落橙</button>
+            <div class="theme-body">
+                <div class="theme-section-label">预设主题</div>
+                <div class="theme-buttons">
+                    <button class="theme-btn theme-default" @click="setTheme('theme-default')">🌿 默认暖色</button>
+                    <button class="theme-btn theme-dark" @click="setTheme('theme-dark')">🌙 暗夜黑</button>
+                    <button class="theme-btn theme-ocean" @click="setTheme('theme-ocean')">💙 海洋绿</button>
+                    <button class="theme-btn theme-purple" @click="setTheme('theme-purple')">💜 梦幻紫</button>
+                    <button class="theme-btn theme-sunset" @click="setTheme('theme-sunset')">🧡 日落橙</button>
+                    <button class="theme-btn theme-gray" @click="setTheme('theme-gray')">⚪ 经典灰</button>
+                    <button class="theme-btn theme-deep-purple" @click="setTheme('theme-deep-purple')">🟣 深紫色</button>
+                    <button class="theme-btn theme-lavender" @click="setTheme('theme-lavender')">🪻 薰衣草</button>
+                    <button class="theme-btn theme-mono" @click="setTheme('theme-mono')">⚫ 黑白主题</button>
+                    <button class="theme-btn theme-mint" @click="setTheme('theme-mint')">🍃 薄荷马卡龙</button>
+                    <button class="theme-btn theme-pink" @click="setTheme('theme-pink')">🌸 粉色马卡龙</button>
+                    <button class="theme-btn theme-hc-a" @click="setTheme('theme-hc-a')">🟡 高对比 A</button>
+                    <button class="theme-btn theme-hc-b" @click="setTheme('theme-hc-b')">⬛ 高对比 B</button>
+                    <button class="theme-btn theme-custom" @click="setTheme('theme-custom')">🎨 自定义主题</button>
+                </div>
+                <div class="theme-section-label" style="margin-top: 16px;">自定义颜色（选「自定义主题」生效）</div>
+                <div class="custom-colors">
+                    <div class="color-row">
+                        <label>主色（按钮 / 进度 / 高亮）</label>
+                        <input type="color" v-model="customAccent" @input="applyCustomColors">
+                    </div>
+                    <div class="color-row">
+                        <label>背景起点色</label>
+                        <input type="color" v-model="customBgStart" @input="applyCustomColors">
+                    </div>
+                    <div class="color-row">
+                        <label>背景终点色</label>
+                        <input type="color" v-model="customBgEnd" @input="applyCustomColors">
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -238,7 +270,7 @@
                 <div class="settings-grid">
                     <div class="settings-full">
                         <div class="settings-title">🖼️ 自定义背景图片</div>
-                        <div class="settings-desc">输入图片URL（支持 http/https），刷新后自动应用</div>
+                        <div class="settings-desc">输入图片URL（支持 http/https），刷新后自动应用。无图片时使用当前主题背景色</div>
                         <input type="text" v-model="bgImageUrl" class="settings-input" placeholder="https://example.com/background.jpg">
                         <div class="settings-buttons">
                             <button class="btn btn-outline" @click="saveBgImage">应用背景</button>
@@ -386,9 +418,9 @@
         </div>
     </div>
 
-    <!-- 反馈（含 GitHub 建议链接） -->
+    <!-- 反馈 -->
     <div id="feedbackModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-content" style="max-width: 380px;">
             <div class="modal-header">
                 <span>💬 反馈与改进</span>
                 <button class="modal-close" id="closeFeedbackBtn">&times;</button>
@@ -399,9 +431,6 @@
                 <div class="feedback-links">
                     <a href="https://github.com/Wang-Anyi/CloudMusicFree/issues/new" target="_blank" rel="noopener noreferrer" class="feedback-link feedback-link-issue">
                         🐛 在 GitHub 提交 Issue
-                    </a>
-                    <a href="https://github.com/Wang-Anyi/CloudMusicFree/discussions" target="_blank" rel="noopener noreferrer" class="feedback-link feedback-link-discuss">
-                        💡 参与讨论 / 提建议
                     </a>
                 </div>
                 <p style="margin-top: 16px; font-size: 0.8rem; color: #999;">期待您的反馈，让播放器更好用！</p>
@@ -465,7 +494,7 @@
                         <div class="settings-title">🎵 我创建的（{{ createdPlaylists.length }}）</div>
                         <div class="my-playlist-grid">
                             <div v-for="pl in createdPlaylists" :key="pl.id" class="playlist-item" @click="openMyPlaylist(pl)">
-                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=my'" class="pl-cover" alt="cover">
+                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=my'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer">
                                 <div class="pl-name" :title="pl.name">{{ pl.name }}</div>
                                 <div class="pl-count">📀 {{ pl.trackCount || 0 }}首</div>
                             </div>
@@ -475,7 +504,7 @@
                         <div class="settings-title">📚 我收藏的（{{ subscribedPlaylists.length }}）</div>
                         <div class="my-playlist-grid">
                             <div v-for="pl in subscribedPlaylists" :key="pl.id" class="playlist-item" @click="openMyPlaylist(pl)">
-                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=sub'" class="pl-cover" alt="cover">
+                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=sub'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer">
                                 <div class="pl-name" :title="pl.name">{{ pl.name }}</div>
                                 <div class="pl-count">📀 {{ pl.trackCount || 0 }}首</div>
                             </div>
