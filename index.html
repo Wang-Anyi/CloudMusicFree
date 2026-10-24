@@ -5,21 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=10" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=10" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=11" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=11" type="image/x-icon">
 
-    <link rel="manifest" href="./manifest.json?v=9">
+    <link rel="manifest" href="./manifest.json?v=10">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=9">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=10">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@4.4.0/dist/browser-id3-writer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/idb@7.1.1/build/index.global.min.js"></script>
     <link rel="stylesheet" href="./style.css">
 </head>
@@ -116,6 +115,9 @@
                     <div class="now-playing">
                         <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover" @load="onImageLoad($event)">
                         <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
+                        <div v-if="hasMV" class="mv-badge-wrap">
+                            <button class="mv-badge" @click="showMV">🎬 观看 MV</button>
+                        </div>
                         <div class="player-controls">
                             <div class="progress-bar-container">
                                 <span class="time-current">{{ formatTime(currentTime) }}</span>
@@ -136,7 +138,6 @@
                             <button class="ctrl-btn" @click="showSimilarSongs">🔍 相似</button>
                             <button class="ctrl-btn" @click="showMV">🎬 MV</button>
                             <button class="ctrl-btn" @click="showComments">💬 评论</button>
-                            <button class="ctrl-btn" @click="shareCurrentSong">📤 分享</button>
                         </div>
                         <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
                         <div v-if="playErrorMsg" class="loading-tip" style="background:#ffdad2; color:#b13e1a;">{{ playErrorMsg }}</div>
@@ -169,11 +170,10 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 解析优先级：免费外链 → v1音质降级 → 老接口 → 外链兜底 · 下载带封面MP3
+            🎧 解析优先级：免费外链 → v1音质降级 → 老接口 → 外链兜底 · 下载包含封面/歌词/完整信息
         </div>
     </div>
 
-    <!-- 全屏播放器 -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -216,7 +216,6 @@
         </div>
     </div>
 
-    <!-- 主题弹窗 -->
     <div id="themeModal" class="modal" style="display: none;">
         <div class="modal-content theme-modal-content">
             <div class="modal-header">
@@ -233,7 +232,6 @@
         </div>
     </div>
 
-    <!-- 设置弹窗 -->
     <div id="settingsModal" class="modal" style="display: none;">
         <div class="modal-content settings-modal-content">
             <div class="modal-header">
@@ -392,7 +390,6 @@
         </div>
     </div>
 
-    <!-- 反馈 -->
     <div id="feedbackModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 350px;">
             <div class="modal-header">
@@ -410,7 +407,6 @@
         </div>
     </div>
 
-    <!-- 公告 -->
     <div id="announcementModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 400px;">
             <div class="modal-header">
@@ -429,7 +425,6 @@
         </div>
     </div>
 
-    <!-- VIP -->
     <div id="vipModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -448,7 +443,6 @@
         </div>
     </div>
 
-    <!-- 播放队列 -->
     <div id="playQueueModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -478,7 +472,6 @@
         </div>
     </div>
 
-    <!-- 我的歌单 -->
     <div id="myPlaylistsModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -517,7 +510,6 @@
         </div>
     </div>
 
-    <!-- 相似 -->
     <div id="similarSongsModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -545,7 +537,6 @@
         </div>
     </div>
 
-    <!-- MV -->
     <div id="mvPlayerModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
@@ -563,7 +554,6 @@
         </div>
     </div>
 
-    <!-- 评论 -->
     <div id="commentsModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px; max-height: 80vh;">
             <div class="modal-header">
@@ -586,7 +576,6 @@
         </div>
     </div>
 
-    <!-- 睡眠 -->
     <div id="sleepTimerModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 300px;">
             <div class="modal-header">
@@ -607,7 +596,6 @@
         </div>
     </div>
 
-    <!-- iOS 安装 -->
     <div id="iosInstallModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 360px;">
             <div class="modal-header">
@@ -626,7 +614,6 @@
         </div>
     </div>
 
-    <!-- 迷你播放器 -->
     <div id="miniPlayer" class="mini-player" v-show="miniPlayerVisible" @click="restoreFromMini">
         <img :src="currentCover" class="mini-cover" alt="">
         <div class="mini-info">
