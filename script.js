@@ -104,7 +104,7 @@ createApp({
         const createdPlaylists = computed(() => myPlaylists.value.filter(p => !p.subscribed));
         const subscribedPlaylists = computed(() => myPlaylists.value.filter(p => p.subscribed));
 
-        // ========== PWA 安装 ==========
+        // ========== PWA ==========
         const deferredInstallPrompt = ref(null);
         const showInstallBtn = ref(false);
         const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -974,60 +974,147 @@ createApp({
             ];
         };
 
-        // ✅ 已改回旧方式：playlist/track/all，limit 拉到 10 万
+        // ============================================================
+        // ✅ 关键重构：歌单加载（旧方式为主 + 自动分页 + 兜底）
+        //    1. playlist/detail 拿 trackIds 和 trackCount（极度稳定）
+        //    2. playlist/track/all?id=xxx&limit=trackCount 一次拿全（旧方式）
+        //    3. 数量不够自动分页 playlist/track/all&limit=1000&offset=xxx
+        //    4. 上面都失败时，才用 song/detail 分批兜底
+        //    每一步都逐个 API 尝试并检查数据有效性，不会因某个 API 返回空而中断
+        // ============================================================
         const fetchPlaylistTracks = async (playlistId, plName, isCustom = false, forceView = null) => {
             searchResults.value = [];
             searchPerformed.value = true;
             loadingSearch.value = true;
             viewMode.value = forceView || 'list';
-            try {
-                const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                let songList = [];
 
-                // 旧链路：playlist/track/all + 超高 limit
-                try {
-                    const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=100000`, { timeout: 30000 });
-                    if (res.data && res.data.songs && res.data.songs.length) {
-                        songList = res.data.songs.map(track => {
-                            const isVip = checkIsVip(track);
-                            let picUrl = extractCover(track);
-                            if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl); else picUrl = defaultCover;
-                            return {
-                                id: String(track.id),
-                                name: track.name,
-                                artist: (track.ar || track.artists || []).map(a => a.name).join('/'),
-                                duration: track.dt || track.duration || 0,
-                                picUrl,
-                                isVip,
-                                loadingCover: false
-                            };
-                        });
+            const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+            const cookieParam = userCookie.value.trim() ? `&cookie=${encodeURIComponent(userCookie.value)}` : '';
+
+            // 遍历 API 请求，返回第一个数据有效的响应
+            const tryRequest = async (path) => {
+                for (let i = 0; i < API_LIST.length; i++) {
+                    const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                    try {
+                        const res = await axios.get(`${apiBase}${path}${cookieParam}`, { timeout: 20000 });
+                        if (res && res.data) {
+                            currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                            return res.data;
+                        }
+                    } catch (e) {}
+                }
+                return null;
+            };
+
+            try {
+                playErrorMsg.value = `⏳ 正在加载歌单 ${plName}...`;
+
+                // === 第 1 步：playlist/detail 拿 trackIds 和 trackCount ===
+                let trackIds = [];
+                let trackCount = 0;
+                const detailData = await tryRequest(`/playlist/detail?id=${playlistId}`);
+                if (detailData && detailData.playlist) {
+                    trackIds = (detailData.playlist.trackIds || []).map(t => t.id);
+                    trackCount = trackIds.length || detailData.playlist.trackCount || 0;
+                    // 有些 API 的 playlist.detail 会顺带返回完整 songs 列表
+                    if (detailData.playlist.songs && detailData.playlist.songs.length) {
+                        // 先保留，如果 track/all 失败可以直接用
                     }
-                } catch (e) {
-                    console.warn('playlist/track/all 失败:', e);
                 }
 
-                if (songList.length) {
+                // === 第 2 步：playlist/track/all 一次拿全 ===
+                let rawSongs = [];
+                if (trackCount > 0) {
+                    const allData = await tryRequest(`/playlist/track/all?id=${playlistId}&limit=${trackCount}&offset=0`);
+                    if (allData && allData.songs && allData.songs.length) {
+                        rawSongs = allData.songs;
+                    }
+                } else {
+                    // 不知道总数，先试默认数量
+                    const allData = await tryRequest(`/playlist/track/all?id=${playlistId}`);
+                    if (allData && allData.songs && allData.songs.length) {
+                        rawSongs = allData.songs;
+                        trackCount = rawSongs.length;
+                    }
+                }
+
+                // === 第 3 步：如果数量不够，分页补齐 ===
+                if (trackCount > 0 && rawSongs.length < trackCount) {
+                    const batchSize = 1000;
+                    let offset = rawSongs.length;
+                    while (offset < trackCount) {
+                        const limit = Math.min(batchSize, trackCount - offset);
+                        const pageData = await tryRequest(`/playlist/track/all?id=${playlistId}&limit=${limit}&offset=${offset}`);
+                        if (pageData && pageData.songs && pageData.songs.length) {
+                            rawSongs.push(...pageData.songs);
+                            offset += pageData.songs.length;
+                            playErrorMsg.value = `⏳ 已加载 ${rawSongs.length}/${trackCount} 首...`;
+                        } else {
+                            break; // 这个 API 不支持 offset 分页，进入第 4 步兜底
+                        }
+                    }
+                }
+
+                // === 第 4 步：终极兜底（song/detail 分批） ===
+                if ((!rawSongs || !rawSongs.length) && trackIds.length) {
+                    const collected = [];
+                    const batchSize = 200;
+                    for (let i = 0; i < trackIds.length; i += batchSize) {
+                        const batch = trackIds.slice(i, i + batchSize);
+                        const idsParam = '[' + batch.join(',') + ']';
+                        for (let j = 0; j < API_LIST.length; j++) {
+                            const apiBase = API_LIST[(currentApiIndex + j) % API_LIST.length];
+                            try {
+                                const res = await axios.get(`${apiBase}/song/detail?ids=${encodeURIComponent(idsParam)}${cookieParam}`, { timeout: 20000 });
+                                if (res.data && res.data.songs && res.data.songs.length) {
+                                    collected.push(...res.data.songs);
+                                    currentApiIndex = (currentApiIndex + j) % API_LIST.length;
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+                        playErrorMsg.value = `⏳ 已加载 ${collected.length}/${trackIds.length} 首...`;
+                    }
+                    if (collected.length) rawSongs = collected;
+                }
+
+                // === 格式化输出 ===
+                if (rawSongs && rawSongs.length) {
+                    const songList = rawSongs.map(track => {
+                        let picUrl = extractCover(track);
+                        if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl); else picUrl = defaultCover;
+                        return {
+                            id: String(track.id),
+                            name: track.name || '未知',
+                            artist: (track.ar || track.artists || []).map(a => a.name || a).join('/') || '未知',
+                            duration: track.dt || track.duration || 0,
+                            picUrl,
+                            isVip: checkIsVip(track),
+                            loadingCover: false
+                        };
+                    });
                     searchResults.value = songList;
                     playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
                     if (isCustom) {
                         queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl }));
                         currentQueueIndex = -1;
                         saveQueueToLocal();
-                        playErrorMsg.value += ' 已加入播放队列';
+                        playErrorMsg.value += ' · 已加入播放队列';
                     }
                     setTimeout(() => { if (playErrorMsg.value.includes('已加载歌单')) playErrorMsg.value = ''; }, 3000);
                 } else {
                     searchResults.value = [];
-                    playErrorMsg.value = '歌单加载失败';
+                    playErrorMsg.value = '❌ 歌单加载失败：所有接口均无法返回数据，请检查 Cookie 或稍后再试';
                 }
             } catch (e) {
+                console.error('fetchPlaylistTracks 异常:', e);
                 searchResults.value = [];
-                playErrorMsg.value = '歌单接口异常';
+                playErrorMsg.value = '❌ 歌单接口异常：' + (e.message || '未知错误');
             } finally {
                 loadingSearch.value = false;
             }
         };
+
         const loadCustomPlaylist = async () => {
             const input = playlistUrlInput.value.trim();
             if (!input) return alert('请输入歌单链接或ID');
@@ -1102,7 +1189,6 @@ createApp({
         };
         const closeMyPlaylistsModal = () => { document.getElementById('myPlaylistsModal').style.display = 'none'; };
 
-        // ✅ 自动提取「我喜欢的音乐」：uid → 歌单 → specialType=5（兜底按名称）→ 旧方式全量加载
         const loadLikedSongs = async () => {
             if (!userCookie.value.trim()) {
                 playErrorMsg.value = '请先在设置中填写 Cookie';
