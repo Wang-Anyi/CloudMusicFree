@@ -4,11 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
+    <!-- PWA 配置 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#d44c2f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+    <!-- favicon -->
     <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
     <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
+    <!-- 第三方库 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@4.4.0/dist/browser-id3-writer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb@7.1.1/build/index.global.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body :class="currentTheme" :style="bodyBackgroundStyle">
@@ -23,10 +34,14 @@
                 <button class="theme-toggle" @click="openThemeModal">🎨 主题</button>
                 <button class="theme-toggle" @click="openSettingsModal">⚙️ 设置</button>
                 <button class="theme-toggle" @click="openFeedbackModal">💬 反馈与改进</button>
+                <button class="theme-toggle" @click="openPlayQueueModal">📋 播放队列</button>
+                <button class="theme-toggle" @click="toggleMiniPlayer">🪄 迷你模式</button>
+                <button class="theme-toggle" @click="openSleepTimerModal">⏰ 睡眠定时</button>
             </div>
         </div>
 
         <div class="main-grid">
+            <!-- 左侧：搜索 + 歌单推荐 + 搜索结果 -->
             <div class="left-panel">
                 <div class="search-card">
                     <div class="search-box">
@@ -65,7 +80,7 @@
                     <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
                         <div class="song-info">
                             <div class="cover-wrapper">
-                                <img class="song-cover" :src="song.picUrl" :data-id="song.id" @load="onImageLoad($event, song.id)" @error="onImageError($event, song.id)" alt="cover">
+                                <img class="song-cover" :src="song.picUrl" :data-id="song.id" @load="onImageLoad($event)" @error="onImageError($event)" alt="cover">
                                 <div class="cover-loading" v-if="song.loadingCover">📷 正在加载图片...</div>
                             </div>
                             <div class="song-details">
@@ -85,6 +100,7 @@
                 <div v-else class="empty-tip">✨ 试试搜索「周杰伦」或点击上方歌单</div>
             </div>
 
+            <!-- 右侧：播放器 + 歌词 + 最近播放 -->
             <div class="right-panel">
                 <div class="player-card">
                     <div class="player-header">
@@ -92,7 +108,7 @@
                         <button class="fullscreen-btn" @click="openFullscreenPlayer">⛶</button>
                     </div>
                     <div class="now-playing">
-                        <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover">
+                        <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover" @load="onImageLoad($event)">
                         <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
                         <div class="player-controls">
                             <div class="progress-bar-container">
@@ -111,6 +127,10 @@
                             <button class="ctrl-btn icon-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️' : '▶️' }}</button>
                             <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
                             <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
+                            <button class="ctrl-btn" @click="showSimilarSongs">🔍 相似</button>
+                            <button class="ctrl-btn" @click="showMV">🎬 MV</button>
+                            <button class="ctrl-btn" @click="showComments">💬 评论</button>
+                            <button class="ctrl-btn" @click="shareCurrentSong">📤 分享</button>
                         </div>
                         <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
                         <div v-if="playErrorMsg" class="loading-tip" style="background:#ffdad2; color:#b13e1a;">{{ playErrorMsg }}</div>
@@ -143,11 +163,11 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 10 个 API 自动故障转移 · 下载带封面MP3
+            🎧 10 个 API 自动故障转移 · 下载带封面MP3 · 全功能播放器
         </div>
     </div>
 
-    <!-- 全屏播放器（居中弹窗模式） -->
+    <!-- ========== 全屏播放器 ========== -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -190,12 +210,14 @@
         </div>
     </div>
 
+    <!-- ========== 弹窗集合 ========== -->
+
     <!-- 主题选择弹窗 -->
     <div id="themeModal" class="modal" style="display: none;">
         <div class="modal-content theme-modal-content">
             <div class="modal-header">
                 <span>🎨 选择主题颜色</span>
-                <button class="modal-close" @click="closeThemeModal">&times;</button>
+                <button class="modal-close" id="closeThemeModalBtn">&times;</button>
             </div>
             <div class="theme-buttons">
                 <button class="theme-btn theme-default" @click="setTheme('theme-default')">🌿 默认暖色</button>
@@ -209,7 +231,7 @@
 
     <!-- 设置弹窗 -->
     <div id="settingsModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-content" style="max-width: 550px;">
             <div class="modal-header">
                 <span>⚙️ 设置</span>
                 <button class="modal-close" id="closeSettingsBtn">&times;</button>
@@ -232,7 +254,7 @@
                     </div>
                     
                     <div class="settings-title" style="margin-top: 20px;">🎴 卡片透明度</div>
-                    <div class="settings-desc">范围 20-100%，数值越大越不透明（100% = 完全不透明）</div>
+                    <div class="settings-desc">范围 20-100%，数值越大越不透明</div>
                     <div class="slider-container">
                         <input type="range" v-model.number="cardOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveCardOpacity">
                         <span class="slider-value">{{ cardOpacity }}%</span>
@@ -245,8 +267,14 @@
                         <span class="slider-value">{{ maskOpacity }}%</span>
                     </div>
                     
+                    <div class="settings-title" style="margin-top: 20px;">🔮 毛玻璃强度（背景模糊）</div>
+                    <div class="settings-desc">范围 0-30px，数值越大背景模糊越强</div>
+                    <div class="slider-container">
+                        <input type="range" v-model.number="glassIntensity" min="0" max="30" step="1" class="settings-slider" @input="saveGlassIntensity">
+                        <span class="slider-value">{{ glassIntensity }}px</span>
+                    </div>
+                    
                     <div class="settings-title" style="margin-top: 20px;">✨ 卡片背景模糊化开关</div>
-                    <div class="settings-desc">开启后卡片背景将带有高斯模糊效果（略带主题色）</div>
                     <label class="switch-label">
                         <span class="switch-text">启用模糊效果</span>
                         <label class="switch">
@@ -254,44 +282,24 @@
                             <span class="slider round"></span>
                         </label>
                     </label>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">🔤 自定义字体（TTF/OTF）</div>
+                    <div class="settings-desc">上传字体文件，立即应用</div>
+                    <div class="font-upload">
+                        <input type="file" accept=".ttf,.otf,.woff,.woff2" @change="applyCustomFont">
+                    </div>
+                    
+                    <div class="settings-title" style="margin-top: 20px;">📦 导入/导出设置</div>
+                    <div class="import-export-buttons">
+                        <button class="btn btn-outline" @click="exportSettings">导出设置</button>
+                        <label class="btn btn-outline" style="cursor:pointer;">导入设置
+                            <input type="file" accept=".json" @change="importSettings" style="display:none;" id="importSettingsInput">
+                        </label>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="modal-btn confirm" @click="closeSettingsModal">关闭</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 个人歌单弹窗（输入 Cookie） -->
-    <div id="myPlaylistsModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
-                <span>📂 我的网易云歌单</span>
-                <button class="modal-close" id="closeMyPlaylistsBtn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="settings-section">
-                    <div class="settings-title">🔑 输入 Cookie</div>
-                    <div class="settings-desc">粘贴您的网易云 Cookie（包含 MUSIC_U）</div>
-                    <textarea v-model="userCookie" rows="3" class="settings-input" placeholder="MUSIC_U=xxxxx; ..."></textarea>
-                    <div class="settings-buttons">
-                        <button class="btn btn-outline" @click="fetchUserPlaylists">📥 获取所有歌单</button>
-                    </div>
-                    <div v-if="playlistLoading" class="loading-tip">⏳ 加载中...</div>
-                    <div v-if="playlistError" class="error-msg">{{ playlistError }}</div>
-                    <div class="playlist-grid-container" v-if="userPlaylists.length">
-                        <div class="playlist-grid five-cols">
-                            <div class="playlist-item" v-for="pl in userPlaylists" :key="pl.id" @click="selectUserPlaylist(pl)">
-                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=pl'" class="pl-cover" alt="cover">
-                                <div class="pl-name">{{ pl.name }}</div>
-                                <div class="pl-count">📀 {{ pl.trackCount }}首</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn confirm" id="confirmMyPlaylistsBtn">关闭</button>
             </div>
         </div>
     </div>
@@ -349,6 +357,138 @@
                 <button id="modalConfirmBtn" class="modal-btn confirm">前往</button>
             </div>
         </div>
+    </div>
+
+    <!-- 播放队列弹窗 -->
+    <div id="playQueueModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <span>📋 播放队列</span>
+                <button class="modal-close" id="closePlayQueueBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="play-queue-controls">
+                    <button class="btn btn-outline" @click="clearQueue">清空队列</button>
+                    <button class="btn btn-outline" @click="toggleLoopMode">{{ loopMode === 'none' ? '单曲循环' : (loopMode === 'one' ? '列表循环' : '随机播放') }}</button>
+                </div>
+                <div class="play-queue-list" id="playQueueList">
+                    <div v-for="(song, idx) in queue" :key="song.id" class="queue-item" :class="{ active: currentQueueIndex === idx }" @click="playFromQueue(idx)">
+                        <span class="queue-index">{{ idx+1 }}</span>
+                        <img :src="song.picUrl" class="queue-cover" alt="">
+                        <div class="queue-info">
+                            <div class="queue-name">{{ song.name }}</div>
+                            <div class="queue-artist">{{ song.artist }}</div>
+                        </div>
+                        <button class="queue-remove" @click.stop="removeFromQueue(idx)">✕</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" @click="closePlayQueueModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 相似歌曲推荐弹窗 -->
+    <div id="similarSongsModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <span>🎵 相似歌曲推荐</span>
+                <button class="modal-close" id="closeSimilarBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="similar-list" v-if="similarSongs.length">
+                    <div v-for="song in similarSongs" :key="song.id" class="similar-item" @click="playSimilarSong(song)">
+                        <img :src="song.picUrl" class="similar-cover">
+                        <div class="similar-info">
+                            <div class="similar-name">{{ song.name }}</div>
+                            <div class="similar-artist">{{ song.artist }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="empty-tip">暂无相似歌曲</div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" @click="closeSimilarModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MV播放弹窗 -->
+    <div id="mvPlayerModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <span>🎬 MV播放</span>
+                <button class="modal-close" id="closeMvBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="mv-container">
+                    <iframe id="mvIframe" width="100%" height="400" frameborder="0" allowfullscreen></iframe>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" @click="closeMvModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 评论展示弹窗 -->
+    <div id="commentsModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px; max-height: 80vh;">
+            <div class="modal-header">
+                <span>💬 精彩评论</span>
+                <button class="modal-close" id="closeCommentsBtn">&times;</button>
+            </div>
+            <div class="modal-body" style="overflow-y: auto;">
+                <div v-for="comment in comments" :key="comment.commentId" class="comment-item">
+                    <img :src="comment.user.avatarUrl" class="comment-avatar">
+                    <div class="comment-content">
+                        <div class="comment-user">{{ comment.user.nickname }}</div>
+                        <div class="comment-text">{{ comment.content }}</div>
+                    </div>
+                </div>
+                <div v-if="!comments.length" class="empty-tip">暂无评论</div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" @click="closeCommentsModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 睡眠定时器弹窗 -->
+    <div id="sleepTimerModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 300px;">
+            <div class="modal-header">
+                <span>⏰ 睡眠定时</span>
+                <button class="modal-close" id="closeSleepBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="sleep-options">
+                    <button class="btn btn-outline" @click="setSleepTimer(15)">15分钟</button>
+                    <button class="btn btn-outline" @click="setSleepTimer(30)">30分钟</button>
+                    <button class="btn btn-outline" @click="setSleepTimer(60)">60分钟</button>
+                    <button class="btn btn-outline" @click="cancelSleepTimer">取消</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" @click="closeSleepModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 迷你播放器浮层 -->
+    <div id="miniPlayer" class="mini-player" v-show="miniPlayerVisible" @click="restoreFromMini">
+        <img :src="currentCover" class="mini-cover" alt="">
+        <div class="mini-info">
+            <div class="mini-title">{{ currentSongName }}</div>
+            <div class="mini-artist">{{ currentArtist }}</div>
+        </div>
+        <div class="mini-controls">
+            <button class="mini-btn" @click.stop="playPrev">⏮️</button>
+            <button class="mini-btn" @click.stop="togglePlayPause">{{ isPlaying ? '⏸️' : '▶️' }}</button>
+            <button class="mini-btn" @click.stop="playNext">⏭️</button>
+        </div>
+        <button class="mini-close" @click.stop="closeMiniPlayer">✕</button>
     </div>
 </div>
 
