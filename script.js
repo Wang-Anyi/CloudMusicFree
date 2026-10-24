@@ -1,4 +1,4 @@
-const { createApp, ref, onMounted, nextTick, computed, watch } = Vue;
+const { createApp, ref, onMounted, nextTick, computed } = Vue;
 
 /* ========== 动态渐变背景 ========== */
 const extractColorFromImage = (url) => {
@@ -64,12 +64,11 @@ createApp({
         let currentSongArtist = '';
         const currentAlbum = ref('');
         const currentLrcRaw = ref('');
+        const currentTLrcRaw = ref('');  // ✅ 翻译歌词原文
 
         const queue = ref([]);
         let currentQueueIndex = -1;
-        const loopMode = ref('none');
 
-        const miniPlayerVisible = ref(false);
         let sleepTimerId = null;
 
         const fullscreenPlayerVisible = ref(false);
@@ -377,9 +376,6 @@ createApp({
             const saf = localStorage.getItem('autoFullscreenOnEnter');
             if (saf !== null) autoFullscreenOnEnter.value = saf === 'true';
 
-            const smp = localStorage.getItem('miniPlayerVisible');
-            if (smp === 'true') miniPlayerVisible.value = true;
-
             const sc = localStorage.getItem('neteaseCookie');
             if (sc) userCookie.value = sc;
         };
@@ -399,7 +395,7 @@ createApp({
             closeThemeModal();
         };
 
-        // ========== 歌词 ==========
+        // ========== 歌词解析与合并翻译 ==========
         const scrollLyricsToActive = () => {
             if (!lyricsContainer.value) return;
             const container = lyricsContainer.value;
@@ -419,8 +415,8 @@ createApp({
             }
         };
         const splitLyricsIntoWords = () => {
-            const containers = document.querySelectorAll('.lyrics-container .lyric-line');
-            containers.forEach(container => {
+            const originals = document.querySelectorAll('.lyrics-container .lyric-original');
+            originals.forEach(container => {
                 const text = container.innerText;
                 if (text && !container.querySelector('.word-span')) {
                     container.innerHTML = '';
@@ -456,15 +452,70 @@ createApp({
             result.sort((a, b) => a.time - b.time);
             return result;
         };
+
+        // ✅ 合并原文 + 翻译，按时间对齐
+        const mergeLyrics = (lrcStr, tlyricStr) => {
+            const original = parseLrc(lrcStr);
+            const translated = parseLrc(tlyricStr);
+            const transMap = {};
+            translated.forEach(t => {
+                const key = t.time.toFixed(2);
+                if (!transMap[key]) transMap[key] = [];
+                transMap[key].push(t.text);
+            });
+            return original.map(line => {
+                const key = line.time.toFixed(2);
+                return {
+                    time: line.time,
+                    text: line.text,
+                    trans: (transMap[key] || []).join(' / ')
+                };
+            });
+        };
+
+        // ✅ 下载时构造合并 LRC：原文第 1 行、翻译第 2 行，时间轴一致
+        const buildMergedLrc = (originalLrc, translatedLrc) => {
+            if (!originalLrc) return '';
+            if (!translatedLrc) return originalLrc;
+            const original = parseLrc(originalLrc);
+            const translated = parseLrc(translatedLrc);
+            if (!translated.length) return originalLrc;
+            const transMap = {};
+            translated.forEach(t => {
+                const key = t.time.toFixed(2);
+                if (!transMap[key]) transMap[key] = [];
+                transMap[key].push(t.text);
+            });
+            const fmt = (s) => {
+                const min = Math.floor(s / 60);
+                const sec = s - min * 60;
+                return `[${String(min).padStart(2, '0')}:${sec.toFixed(2).padStart(5, '0')}]`;
+            };
+            const lines = [];
+            original.forEach(line => {
+                lines.push(fmt(line.time) + line.text);
+                const key = line.time.toFixed(2);
+                if (transMap[key]) {
+                    transMap[key].forEach(transText => {
+                        lines.push(fmt(line.time) + transText);
+                    });
+                }
+            });
+            return lines.join('\n');
+        };
+
         const fetchLyrics = async (songId) => {
             try {
                 const res = await requestWithFallback(`/lyric?id=${songId}`, { timeout: 8000 });
                 const data = res.data;
                 const lrcStr = data.lrc?.lyric || (typeof data.lrc === 'string' ? data.lrc : '') || data.lyric || '';
+                const tlyricStr = data.tlyric?.lyric || (typeof data.tlyric === 'string' ? data.tlyric : '') || '';
                 currentLrcRaw.value = lrcStr;
-                const parsed = parseLrc(lrcStr);
-                lyricsLines.value = parsed;
-                fullscreenLyrics.value = parsed;
+                currentTLrcRaw.value = tlyricStr;
+                const merged = mergeLyrics(lrcStr, tlyricStr);
+                lyricsLines.value = merged;
+                fullscreenLyrics.value = merged;
+                // 逐字歌词（仅原文）
                 const wordLines = lrcStr.split('\n');
                 const words = [];
                 const timeRegex = /\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/;
@@ -487,8 +538,10 @@ createApp({
                 fullscreenLyrics.value = [];
                 wordByWordLyrics.value = [];
                 currentLrcRaw.value = '';
+                currentTLrcRaw.value = '';
             }
         };
+
         const updateLyrics = (currentSec) => {
             if (lyricsLines.value.length) {
                 let idx = -1;
@@ -740,6 +793,7 @@ createApp({
                 currentSongArtist = currentArtist.value;
                 currentAlbum.value = '';
                 currentLrcRaw.value = '';
+                currentTLrcRaw.value = '';
                 addToHistory(songId, songName, currentArtist.value, currentCover.value);
                 if (addToQueue) {
                     const existing = queue.value.find(s => s.id === songId);
@@ -749,7 +803,6 @@ createApp({
                     } else {
                         currentQueueIndex = queue.value.findIndex(s => s.id === songId);
                     }
-                    saveQueueToLocal();
                 } else if (queueIndex >= 0) {
                     currentQueueIndex = queueIndex;
                 }
@@ -786,86 +839,24 @@ createApp({
             }
         };
 
-        // ========== 队列 ==========
-        const saveQueueToLocal = () => {
-            localStorage.setItem('playQueue', JSON.stringify(queue.value));
-            localStorage.setItem('currentQueueIndex', currentQueueIndex);
-        };
-        const loadQueueFromLocal = () => {
-            const saved = localStorage.getItem('playQueue');
-            if (saved) {
-                try {
-                    queue.value = JSON.parse(saved);
-                    const si = localStorage.getItem('currentQueueIndex');
-                    if (si !== null) currentQueueIndex = parseInt(si);
-                } catch (e) {}
-            }
-        };
-        const playFromQueue = (idx) => {
-            if (idx < 0 || idx >= queue.value.length) return;
-            const song = queue.value[idx];
-            playSongById(song.id, song.name, song.artist, song.picUrl, false, idx);
-        };
-        const removeFromQueue = (idx) => {
-            queue.value.splice(idx, 1);
-            if (currentQueueIndex >= idx) currentQueueIndex--;
-            saveQueueToLocal();
-        };
-        const clearQueue = () => { queue.value = []; currentQueueIndex = -1; saveQueueToLocal(); };
-        const toggleLoopMode = () => {
-            if (loopMode.value === 'none') loopMode.value = 'one';
-            else if (loopMode.value === 'one') loopMode.value = 'all';
-            else loopMode.value = 'none';
-            playErrorMsg.value = `循环模式: ${loopMode.value === 'none' ? '无' : (loopMode.value === 'one' ? '单曲循环' : '列表循环')}`;
-            setTimeout(() => { if (playErrorMsg.value.includes('循环模式')) playErrorMsg.value = ''; }, 2000);
-        };
+        // ========== 上一首 / 下一首 ==========
         const playPrev = () => {
             if (!queue.value.length) return;
             let i = currentQueueIndex - 1;
             if (i < 0) i = queue.value.length - 1;
-            playFromQueue(i);
+            const song = queue.value[i];
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, i);
         };
         const playNext = () => {
             if (!queue.value.length) return;
             let i = currentQueueIndex + 1;
             if (i >= queue.value.length) {
-                if (loopMode.value === 'all') i = 0;
+                if (queue.value.length > 1) i = 0;
                 else return;
             }
-            playFromQueue(i);
+            const song = queue.value[i];
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, i);
         };
-        let sortableInstanceQueue = null;
-        const openPlayQueueModal = () => {
-            document.getElementById('playQueueModal').style.display = 'flex';
-            nextTick(() => {
-                const queueList = document.getElementById('playQueueList');
-                if (queueList && !sortableInstanceQueue) {
-                    sortableInstanceQueue = new Sortable(queueList, {
-                        animation: 200,
-                        onEnd: (evt) => {
-                            const newQueue = [...queue.value];
-                            const [moved] = newQueue.splice(evt.oldIndex, 1);
-                            newQueue.splice(evt.newIndex, 0, moved);
-                            queue.value = newQueue;
-                            saveQueueToLocal();
-                            if (currentQueueIndex === evt.oldIndex) currentQueueIndex = evt.newIndex;
-                            else if (currentQueueIndex > evt.oldIndex && currentQueueIndex <= evt.newIndex) currentQueueIndex--;
-                            else if (currentQueueIndex < evt.oldIndex && currentQueueIndex >= evt.newIndex) currentQueueIndex++;
-                            saveQueueToLocal();
-                        }
-                    });
-                }
-            });
-        };
-        const closePlayQueueModal = () => { document.getElementById('playQueueModal').style.display = 'none'; };
-
-        // ========== 迷你播放器 ==========
-        const toggleMiniPlayer = () => {
-            miniPlayerVisible.value = !miniPlayerVisible.value;
-            localStorage.setItem('miniPlayerVisible', miniPlayerVisible.value);
-        };
-        const restoreFromMini = () => { miniPlayerVisible.value = false; localStorage.setItem('miniPlayerVisible', false); };
-        const closeMiniPlayer = () => { miniPlayerVisible.value = false; localStorage.setItem('miniPlayerVisible', false); };
 
         // ========== 专辑信息（下载用） ==========
         const fetchAlbumInfo = async (songId) => {
@@ -896,7 +887,7 @@ createApp({
             if (sleepTimerId) { clearTimeout(sleepTimerId); sleepTimerId = null; playErrorMsg.value = '✅ 已取消睡眠定时'; setTimeout(() => { if (playErrorMsg.value === '✅ 已取消睡眠定时') playErrorMsg.value = ''; }, 2000); }
         };
 
-        // ========== ✅ 下载（完整元数据 + 歌词 + 封面） ==========
+        // ========== 下载（完整元数据 + 合并歌词 + 封面） ==========
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src) { playErrorMsg.value = '没有正在播放的歌曲'; return; }
@@ -923,12 +914,21 @@ createApp({
                     : String(new Date().getFullYear());
                 const trackNo = songDetail?.no ? String(songDetail.no) : '';
 
-                let lyricText = currentLrcRaw.value || '';
+                // 合并歌词（原文 + 翻译）
+                let lyricText = '';
+                let hasTranslation = false;
+                if (currentLrcRaw.value) {
+                    lyricText = buildMergedLrc(currentLrcRaw.value, currentTLrcRaw.value);
+                    hasTranslation = !!currentTLrcRaw.value;
+                }
                 if (!lyricText) {
                     try {
                         const lrcRes = await requestWithFallback(`/lyric?id=${currentSongId}`, { timeout: 8000 });
                         const data = lrcRes.data;
-                        lyricText = data?.lrc?.lyric || (typeof data?.lrc === 'string' ? data.lrc : '') || data?.lyric || '';
+                        const orig = data?.lrc?.lyric || (typeof data?.lrc === 'string' ? data.lrc : '') || data?.lyric || '';
+                        const trans = data?.tlyric?.lyric || (typeof data?.tlyric === 'string' ? data.tlyric : '') || '';
+                        lyricText = buildMergedLrc(orig, trans);
+                        hasTranslation = !!trans;
                     } catch (e) {
                         console.warn('[下载] 歌词获取失败');
                     }
@@ -971,7 +971,6 @@ createApp({
                     .setFrame('TXXX', { description: '下载时间', value: new Date().toLocaleString('zh-CN') })
                     .setFrame('WOAS', `https://music.163.com/song?id=${currentSongId}`)
                     .setFrame('COMM', {
-                        // ✅ COMM 帧只用 description + text
                         description: '',
                         text: [
                             `歌曲名称：${title}`,
@@ -997,7 +996,7 @@ createApp({
                     });
                 }
 
-                // ✅ 修复：USLT 的字段名是 description（不是 descriptor）
+                // ✅ USLT 的字段名是 description（不是 descriptor）
                 if (lyricText) {
                     writer.setFrame('USLT', {
                         description: '',
@@ -1018,7 +1017,7 @@ createApp({
 
                 const features = [];
                 if (coverBuffer) features.push('封面');
-                if (lyricText) features.push('歌词');
+                if (lyricText) features.push(hasTranslation ? '歌词(含翻译)' : '歌词');
                 features.push('完整信息');
                 playErrorMsg.value = `✅ 下载完成（含${features.join(' / ')}）`;
                 setTimeout(() => { if (playErrorMsg.value.includes('下载完成')) playErrorMsg.value = ''; }, 3000);
@@ -1075,9 +1074,12 @@ createApp({
             if (audio) audio.volume = volumeValue.value;
         };
         const onAudioEnded = () => {
-            isPlaying.value = false; fullscreenIsPlaying.value = false;
-            if (loopMode.value === 'one') { const a = audioPlayer.value; if (a) { a.currentTime = 0; a.play(); isPlaying.value = true; } }
-            else if (loopMode.value === 'all' && queue.value.length > 1) playNext();
+            isPlaying.value = false;
+            fullscreenIsPlaying.value = false;
+            // 自动播放下一首（如果有）
+            if (queue.value.length > 1 && currentQueueIndex < queue.value.length - 1) {
+                playNext();
+            }
         };
         const onAudioError = (e) => { console.error('Audio error:', e); playErrorMsg.value = '播放失败，可能是音频链接无效'; isPlaying.value = false; fullscreenIsPlaying.value = false; };
 
@@ -1459,7 +1461,6 @@ createApp({
                     if (isCustom) {
                         queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl }));
                         currentQueueIndex = -1;
-                        saveQueueToLocal();
                         playErrorMsg.value += ' · 已加入播放队列';
                     }
                     setTimeout(() => { if (playErrorMsg.value.includes('已加载歌单')) playErrorMsg.value = ''; }, 3000);
@@ -1590,7 +1591,7 @@ createApp({
         const closeFeedbackModal = () => { document.getElementById('feedbackModal').style.display = 'none'; };
 
         const initModalEvents = () => {
-            const modals = ['themeModal', 'settingsModal', 'feedbackModal', 'vipModal', 'playQueueModal', 'sleepTimerModal', 'myPlaylistsModal', 'iosInstallModal'];
+            const modals = ['themeModal', 'settingsModal', 'feedbackModal', 'vipModal', 'sleepTimerModal', 'myPlaylistsModal', 'iosInstallModal'];
             modals.forEach(id => {
                 const m = document.getElementById(id);
                 if (m) {
@@ -1617,7 +1618,6 @@ createApp({
             loadAllSettings();
             loadCustomFontFromDB();
             loadPlaylists();
-            loadQueueFromLocal();
             initModalEvents();
             window.addEventListener('keydown', handleKeydown);
             document.addEventListener('fullscreenchange', onFullscreenChange);
@@ -1635,7 +1635,6 @@ createApp({
                 if (ok) ok.onclick = hide;
                 ann.onclick = (e) => { if (e.target === ann) hide(); };
             }
-            watch(queue, () => saveQueueToLocal(), { deep: true });
         });
 
         return {
@@ -1658,9 +1657,6 @@ createApp({
             saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveContainerOpacity, saveMaskOpacity, saveGlassIntensity,
             fontScale, saveFontScale,
             openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal,
-            queue, playFromQueue, removeFromQueue, clearQueue, toggleLoopMode, loopMode,
-            openPlayQueueModal, closePlayQueueModal,
-            miniPlayerVisible, toggleMiniPlayer, restoreFromMini, closeMiniPlayer,
             openSleepTimerModal, closeSleepModal, setSleepTimer, cancelSleepTimer,
             applyCustomFont, restoreDefaultFont, exportSettings,
             showVipModal, hideVipModal, goToNetEase, playSongById,
