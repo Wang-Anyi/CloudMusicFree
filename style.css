@@ -342,11 +342,44 @@ body::before {
     border-radius: 32px; padding: 16px 18px; color: var(--text-primary);
 }
 .lyrics-container { max-height: 200px; overflow-y: auto; font-size: 0.85rem; line-height: 1.5; }
-.lyric-line { padding: 4px 8px; transition: 0.1s; color: var(--lyrics-text); }
-.lyric-line.active {
-    color: var(--lyrics-active-color); font-weight: bold;
-    background: var(--lyrics-active-bg); border-radius: 40px;
+
+/* ✅ 歌词：原文 + 翻译两行显示 */
+.lyric-line {
+    padding: 6px 8px;
+    transition: 0.1s;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-radius: 40px;
 }
+.lyric-line.active {
+    background: var(--lyrics-active-bg);
+}
+.lyric-line .lyric-original {
+    color: var(--lyrics-text);
+    transition: 0.1s;
+}
+.lyric-line.active .lyric-original {
+    color: var(--lyrics-active-color);
+    font-weight: bold;
+}
+.lyric-line .lyric-trans {
+    font-size: 0.8em;
+    opacity: 0.65;
+    font-weight: normal;
+    color: var(--lyrics-text);
+}
+.lyric-line.active .lyric-trans {
+    opacity: 0.9;
+    color: var(--lyrics-active-color);
+}
+.lyric-line .word-span.active {
+    color: var(--lyrics-active-color);
+    font-weight: bold;
+    background: rgba(234, 140, 92, 0.25);
+    border-radius: 4px;
+}
+
 .empty-lyrics { text-align: center; color: var(--text-secondary); padding: 20px; }
 .history-item {
     display: flex; gap: 12px; padding: 8px 0;
@@ -366,6 +399,9 @@ body::before {
     padding: 6px; border-radius: 60px; background: rgba(0,0,0,0.3);
 }
 
+/* ============================================================
+   弹窗系统：所有弹窗始终在视口正中央
+   ============================================================ */
 .modal {
     position: fixed;
     inset: 0;
@@ -424,6 +460,43 @@ body::before {
 .modal-btn.confirm { background: #d44c2f; color: white; }
 .modal-btn.confirm:hover { background: #b83b1f; transform: translateY(-1px); }
 
+/* ✅ 反馈弹窗里的 GitHub 链接 */
+.feedback-links {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+}
+.feedback-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 18px;
+    border-radius: 40px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: 0.2s;
+}
+.feedback-link-issue {
+    background: #d44c2f;
+    color: white;
+}
+.feedback-link-issue:hover {
+    background: #b83b1f;
+    transform: translateY(-1px);
+}
+.feedback-link-discuss {
+    background: #f0e2d4;
+    color: #b64926;
+    border: 1px solid #e2c7b5;
+}
+.feedback-link-discuss:hover {
+    background: #fff0e4;
+    transform: translateY(-1px);
+}
+
 .theme-buttons { display: flex; flex-direction: column; gap: 12px; padding: 24px; }
 .theme-btn {
     padding: 12px 20px; border: none; border-radius: 60px;
@@ -436,6 +509,9 @@ body::before {
 .theme-sunset { background: #fff3e0; color: #bf360c; }
 .theme-btn:hover { transform: scale(1.02); filter: brightness(0.95); }
 
+/* ============================================================
+   全屏播放器
+   ============================================================ */
 .fullscreen-modal {
     position: fixed;
     inset: 0;
@@ -481,14 +557,31 @@ body::before {
 .fullscreen-song { font-size: 1.8rem; font-weight: 700; color: #fef2e6; }
 .fullscreen-artist { font-size: 1rem; color: #d4bca8; margin-top: 6px; }
 .fullscreen-lyrics-scroll { flex: 1; overflow-y: auto; padding-right: 12px; }
+
+/* ✅ 全屏歌词：原文 + 翻译 */
 .fullscreen-lyric-line {
     padding: 8px 16px; font-size: 1rem; color: #c0b0a0;
     transition: 0.2s; text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-radius: 40px;
+}
+.fullscreen-lyric-line .lyric-original { color: inherit; }
+.fullscreen-lyric-line .lyric-trans {
+    font-size: 0.8em;
+    opacity: 0.65;
+    font-weight: normal;
 }
 .fullscreen-lyric-line.active {
     color: #ea8c5c; font-weight: bold; font-size: 1.1rem;
-    background: rgba(234, 140, 92, 0.2); border-radius: 40px;
+    background: rgba(234, 140, 92, 0.2);
 }
+.fullscreen-lyric-line.active .lyric-trans {
+    color: #ea8c5c;
+    opacity: 0.85;
+}
+
 .fullscreen-controls { margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(255,215,190,0.3); }
 .fullscreen-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .fullscreen-progress .progress-bar { flex: 1; }
@@ -517,6 +610,9 @@ body::before {
     .fullscreen-buttons .icon-btn { font-size: 1rem; }
 }
 
+/* ============================================================
+   设置弹窗
+   ============================================================ */
 .settings-modal-content {
     max-width: 900px;
     width: 95%;
