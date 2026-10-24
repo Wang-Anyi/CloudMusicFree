@@ -974,6 +974,7 @@ createApp({
             ];
         };
 
+        // ✅ 已改回旧方式：playlist/track/all，limit 拉到 10 万
         const fetchPlaylistTracks = async (playlistId, plName, isCustom = false, forceView = null) => {
             searchResults.value = [];
             searchPerformed.value = true;
@@ -983,67 +984,27 @@ createApp({
                 const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
                 let songList = [];
 
-                let trackIds = [];
-                for (let i = 0; i < API_LIST.length; i++) {
-                    const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
-                    try {
-                        let url = `${apiBase}/playlist/detail?id=${playlistId}`;
-                        if (userCookie.value.trim()) url += `&cookie=${encodeURIComponent(userCookie.value)}`;
-                        const res = await axios.get(url, { timeout: 15000 });
-                        const tids = res.data?.playlist?.trackIds || [];
-                        if (tids.length) {
-                            trackIds = tids.map(t => t.id);
-                            currentApiIndex = (currentApiIndex + i) % API_LIST.length;
-                            break;
-                        }
-                    } catch (e) {}
-                }
-
-                if (trackIds.length > 0) {
-                    const batchSize = 200;
-                    for (let i = 0; i < trackIds.length; i += batchSize) {
-                        const batch = trackIds.slice(i, i + batchSize);
-                        const idsParam = '[' + batch.join(',') + ']';
-                        let done = false;
-                        for (let j = 0; j < API_LIST.length && !done; j++) {
-                            const apiBase = API_LIST[(currentApiIndex + j) % API_LIST.length];
-                            try {
-                                let url = `${apiBase}/song/detail?ids=${encodeURIComponent(idsParam)}`;
-                                if (userCookie.value.trim()) url += `&cookie=${encodeURIComponent(userCookie.value)}`;
-                                const res = await axios.get(url, { timeout: 20000 });
-                                const songs = res.data?.songs || [];
-                                if (songs.length) {
-                                    for (const item of songs) {
-                                        let picUrl = extractCover(item);
-                                        if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl); else picUrl = defaultCover;
-                                        songList.push({
-                                            id: String(item.id), name: item.name || '未知',
-                                            artist: (item.ar || []).map(a => a.name).join('/') || '未知',
-                                            duration: item.dt || 0, picUrl,
-                                            isVip: checkIsVip(item), loadingCover: false
-                                        });
-                                    }
-                                    done = true;
-                                }
-                            } catch (e) {}
-                        }
-                        searchResults.value = [...songList];
-                        playErrorMsg.value = `⏳ 已加载 ${songList.length}/${trackIds.length} 首...`;
+                // 旧链路：playlist/track/all + 超高 limit
+                try {
+                    const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=100000`, { timeout: 30000 });
+                    if (res.data && res.data.songs && res.data.songs.length) {
+                        songList = res.data.songs.map(track => {
+                            const isVip = checkIsVip(track);
+                            let picUrl = extractCover(track);
+                            if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl); else picUrl = defaultCover;
+                            return {
+                                id: String(track.id),
+                                name: track.name,
+                                artist: (track.ar || track.artists || []).map(a => a.name).join('/'),
+                                duration: track.dt || track.duration || 0,
+                                picUrl,
+                                isVip,
+                                loadingCover: false
+                            };
+                        });
                     }
-                }
-
-                if (!songList.length) {
-                    try {
-                        const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=100000`, { timeout: 30000 });
-                        if (res.data && res.data.songs) {
-                            songList = res.data.songs.map(track => {
-                                const isVip = checkIsVip(track);
-                                let picUrl = extractCover(track);
-                                if (picUrl && picUrl.startsWith('http')) picUrl = toHttps(picUrl); else picUrl = defaultCover;
-                                return { id: String(track.id), name: track.name, artist: (track.ar || []).map(a => a.name).join('/'), duration: track.dt, picUrl, isVip, loadingCover: false };
-                            });
-                        }
-                    } catch (e) {}
+                } catch (e) {
+                    console.warn('playlist/track/all 失败:', e);
                 }
 
                 if (songList.length) {
@@ -1141,7 +1102,7 @@ createApp({
         };
         const closeMyPlaylistsModal = () => { document.getElementById('myPlaylistsModal').style.display = 'none'; };
 
-        // ✅ 自动提取「我喜欢的音乐」：uid → 歌单 → specialType=5（兜底按名称）→ 全量分批加载
+        // ✅ 自动提取「我喜欢的音乐」：uid → 歌单 → specialType=5（兜底按名称）→ 旧方式全量加载
         const loadLikedSongs = async () => {
             if (!userCookie.value.trim()) {
                 playErrorMsg.value = '请先在设置中填写 Cookie';
