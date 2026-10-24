@@ -296,6 +296,14 @@
                             <input type="file" accept=".json" @change="importSettings" style="display:none;" id="importSettingsInput">
                         </label>
                     </div>
+
+                    <!-- ✅ 新增：VIP Cookie 输入 -->
+                    <div class="settings-title" style="margin-top: 20px;">🍪 VIP Cookie（用于解析 VIP 歌曲）</div>
+                    <div class="settings-desc">粘贴完整的 Cookie（包含 MUSIC_U=... 等）</div>
+                    <textarea v-model="userCookie" rows="3" class="settings-input" placeholder="MUSIC_U=...; os=pc; appver=...;"></textarea>
+                    <div class="settings-buttons">
+                        <button class="btn btn-outline" @click="saveCookie">保存 Cookie</button>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -401,7 +409,10 @@
                     <div v-for="song in similarSongs" :key="song.id" class="similar-item" @click="playSimilarSong(song)">
                         <img :src="song.picUrl" class="similar-cover">
                         <div class="similar-info">
-                            <div class="similar-name">{{ song.name }}</div>
+                            <div class="similar-name">
+                                {{ song.name }}
+                                <span class="badge-vip" v-if="song.isVip">VIP</span>
+                            </div>
                             <div class="similar-artist">{{ song.artist }}</div>
                         </div>
                     </div>
