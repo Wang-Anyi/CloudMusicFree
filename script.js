@@ -97,20 +97,52 @@ createApp({
             setTimeout(() => { if (playErrorMsg.value.includes('音质偏好')) playErrorMsg.value = ''; }, 2000);
         };
 
-        // ✅ 新增：我喜欢的音乐歌单 ID
-        const likedPlaylistId = ref(localStorage.getItem('likedPlaylistId') || '');
-        const saveLikedPlaylistId = () => {
-            localStorage.setItem('likedPlaylistId', likedPlaylistId.value.trim());
-            playErrorMsg.value = '✅ 我喜欢的音乐歌单 ID 已保存';
-            setTimeout(() => { if (playErrorMsg.value.includes('歌单 ID')) playErrorMsg.value = ''; }, 2000);
-        };
-
         const myPlaylists = ref([]);
         const loadingMyPlaylists = ref(false);
         const loadingLiked = ref(false);
 
         const createdPlaylists = computed(() => myPlaylists.value.filter(p => !p.subscribed));
         const subscribedPlaylists = computed(() => myPlaylists.value.filter(p => p.subscribed));
+
+        // ========== PWA 安装 ==========
+        const deferredInstallPrompt = ref(null);
+        const showInstallBtn = ref(false);
+        const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        const isStandalone = ref(
+            window.matchMedia('(display-mode: standalone)').matches ||
+            window.navigator.standalone === true
+        );
+        const canInstall = computed(() => !isStandalone.value && (showInstallBtn.value || isIOS));
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredInstallPrompt.value = e;
+            showInstallBtn.value = true;
+        });
+        window.addEventListener('appinstalled', () => {
+            showInstallBtn.value = false;
+            deferredInstallPrompt.value = null;
+            playErrorMsg.value = '✅ 应用已安装到桌面';
+            setTimeout(() => { if (playErrorMsg.value.includes('已安装')) playErrorMsg.value = ''; }, 3000);
+        });
+
+        const installApp = async () => {
+            if (deferredInstallPrompt.value) {
+                deferredInstallPrompt.value.prompt();
+                try {
+                    const { outcome } = await deferredInstallPrompt.value.userChoice;
+                    playErrorMsg.value = outcome === 'accepted' ? '✅ 已开始安装' : '已取消安装';
+                    setTimeout(() => { if (playErrorMsg.value.includes('安装')) playErrorMsg.value = ''; }, 2500);
+                } catch (e) {}
+                deferredInstallPrompt.value = null;
+                showInstallBtn.value = false;
+            } else if (isIOS) {
+                document.getElementById('iosInstallModal').style.display = 'flex';
+            } else {
+                playErrorMsg.value = '请使用 Chrome/Edge 菜单中的「安装应用」';
+                setTimeout(() => { if (playErrorMsg.value.includes('安装应用')) playErrorMsg.value = ''; }, 3000);
+            }
+        };
 
         const API_LIST = [
             'https://meting-api-pi-one.vercel.app',
@@ -858,8 +890,6 @@ createApp({
             if (sm === 'true') miniPlayerVisible.value = true;
             const savedCookie = localStorage.getItem('neteaseCookie');
             if (savedCookie) userCookie.value = savedCookie;
-            const savedLikedId = localStorage.getItem('likedPlaylistId');
-            if (savedLikedId) likedPlaylistId.value = savedLikedId;
         };
         const saveBgImage = () => {
             if (!bgImageUrl.value.trim()) { playErrorMsg.value = '请输入图片URL'; return; }
@@ -881,7 +911,7 @@ createApp({
             setTimeout(() => { if (playErrorMsg.value === '✅ Cookie 已保存') playErrorMsg.value = ''; }, 2000);
         };
         const exportSettings = () => {
-            const s = { theme: currentTheme.value, bgImageUrl: bgImageUrl.value, bgBlur: bgBlur.value, cardOpacity: cardOpacity.value, maskOpacity: maskOpacity.value, glassIntensity: glassIntensity.value, blurEnabled: blurEnabled.value, qualityLevel: qualityLevel.value, likedPlaylistId: likedPlaylistId.value };
+            const s = { theme: currentTheme.value, bgImageUrl: bgImageUrl.value, bgBlur: bgBlur.value, cardOpacity: cardOpacity.value, maskOpacity: maskOpacity.value, glassIntensity: glassIntensity.value, blurEnabled: blurEnabled.value, qualityLevel: qualityLevel.value };
             const blob = new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' });
             const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cloudmusic-settings.json'; a.click(); URL.revokeObjectURL(a.href);
             playErrorMsg.value = '✅ 设置已导出'; setTimeout(() => { if (playErrorMsg.value === '✅ 设置已导出') playErrorMsg.value = ''; }, 2000);
@@ -900,7 +930,6 @@ createApp({
                     if (s.glassIntensity !== undefined) { glassIntensity.value = s.glassIntensity; saveGlassIntensity(); }
                     if (s.blurEnabled !== undefined) { blurEnabled.value = s.blurEnabled; saveBlurEnabled(); }
                     if (s.qualityLevel) { qualityLevel.value = s.qualityLevel; saveQualityLevel(); }
-                    if (s.likedPlaylistId) { likedPlaylistId.value = s.likedPlaylistId; saveLikedPlaylistId(); }
                     playErrorMsg.value = '✅ 设置导入成功';
                 } catch (err) { playErrorMsg.value = '❌ 导入失败'; }
                 setTimeout(() => { if (playErrorMsg.value.includes('设置')) playErrorMsg.value = ''; }, 2000);
@@ -945,7 +974,6 @@ createApp({
             ];
         };
 
-        // ✅ 改造：先 playlist/detail 拿全量 trackIds → 分批 song/detail（每批 200）→ 失败才回退 playlist/track/all&limit=100000
         const fetchPlaylistTracks = async (playlistId, plName, isCustom = false, forceView = null) => {
             searchResults.value = [];
             searchPerformed.value = true;
@@ -955,7 +983,6 @@ createApp({
                 const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
                 let songList = [];
 
-                // 1. 获取全量 trackIds
                 let trackIds = [];
                 for (let i = 0; i < API_LIST.length; i++) {
                     const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
@@ -972,7 +999,6 @@ createApp({
                     } catch (e) {}
                 }
 
-                // 2. 分批 song/detail（每批 200 首）
                 if (trackIds.length > 0) {
                     const batchSize = 200;
                     for (let i = 0; i < trackIds.length; i += batchSize) {
@@ -1006,7 +1032,6 @@ createApp({
                     }
                 }
 
-                // 3. 兜底：playlist/track/all，limit 提到 100000
                 if (!songList.length) {
                     try {
                         const res = await requestWithFallback(`/playlist/track/all?id=${playlistId}&limit=100000`, { timeout: 30000 });
@@ -1116,17 +1141,25 @@ createApp({
         };
         const closeMyPlaylistsModal = () => { document.getElementById('myPlaylistsModal').style.display = 'none'; };
 
-        // ✅ 改造：直接读设置的歌单 ID，走 fetchPlaylistTracks（不再查 specialType=5）
+        // ✅ 自动提取「我喜欢的音乐」：uid → 歌单 → specialType=5（兜底按名称）→ 全量分批加载
         const loadLikedSongs = async () => {
-            const pid = likedPlaylistId.value.trim();
-            if (!pid) {
-                playErrorMsg.value = '请先在设置中填写「我喜欢的音乐」歌单 ID';
-                setTimeout(() => { if (playErrorMsg.value.includes('歌单 ID')) playErrorMsg.value = ''; }, 3500);
+            if (!userCookie.value.trim()) {
+                playErrorMsg.value = '请先在设置中填写 Cookie';
+                setTimeout(() => { if (playErrorMsg.value === '请先在设置中填写 Cookie') playErrorMsg.value = ''; }, 2500);
                 return;
             }
             loadingLiked.value = true;
             try {
-                await fetchPlaylistTracks(pid, '我喜欢的音乐', false, 'grid');
+                if (!myPlaylists.value.length) {
+                    const ok = await loadMyPlaylists(false);
+                    if (!ok) throw new Error('无法加载你的歌单，请检查 Cookie');
+                }
+                let liked = myPlaylists.value.find(pl => pl.specialType === 5);
+                if (!liked) liked = myPlaylists.value.find(pl => /喜欢的音乐/.test(pl.name));
+                if (!liked) throw new Error('未找到「我喜欢的音乐」歌单，请确认 Cookie 有效');
+                await fetchPlaylistTracks(liked.id, liked.name || '我喜欢的音乐', false, 'grid');
+            } catch (e) {
+                playErrorMsg.value = e.message || '加载「我喜欢的音乐」失败';
             } finally {
                 loadingLiked.value = false;
             }
@@ -1170,7 +1203,7 @@ createApp({
         const closeFeedbackModal = () => { document.getElementById('feedbackModal').style.display = 'none'; };
 
         const initModalEvents = () => {
-            const modals = ['themeModal', 'settingsModal', 'feedbackModal', 'vipModal', 'playQueueModal', 'similarSongsModal', 'mvPlayerModal', 'commentsModal', 'sleepTimerModal', 'myPlaylistsModal'];
+            const modals = ['themeModal', 'settingsModal', 'feedbackModal', 'vipModal', 'playQueueModal', 'similarSongsModal', 'mvPlayerModal', 'commentsModal', 'sleepTimerModal', 'myPlaylistsModal', 'iosInstallModal'];
             modals.forEach(id => {
                 const m = document.getElementById(id);
                 if (m) {
@@ -1188,6 +1221,8 @@ createApp({
             }
             const imp = document.getElementById('importSettingsInput');
             if (imp) imp.onchange = importSettings;
+            const iosConfirm = document.getElementById('confirmIosInstallBtn');
+            if (iosConfirm) iosConfirm.onclick = () => { document.getElementById('iosInstallModal').style.display = 'none'; };
         };
 
         onMounted(() => {
@@ -1197,7 +1232,9 @@ createApp({
             loadQueueFromLocal();
             initModalEvents();
             window.addEventListener('keydown', handleKeydown);
-            if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW注册失败', e));
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW注册失败', e));
+            }
             const ann = document.getElementById('announcementModal');
             if (ann) {
                 ann.style.display = 'flex';
@@ -1242,10 +1279,10 @@ createApp({
             showVipModal, hideVipModal, goToNetEase, playSongById,
             userCookie, saveCookie,
             qualityLevel, saveQualityLevel,
-            likedPlaylistId, saveLikedPlaylistId,
             myPlaylists, loadingMyPlaylists, loadMyPlaylists,
             createdPlaylists, subscribedPlaylists, openMyPlaylist, openMyPlaylistsModal, closeMyPlaylistsModal,
-            loadingLiked, loadLikedSongs
+            loadingLiked, loadLikedSongs,
+            canInstall, installApp
         };
     }
 }).mount('#app');
