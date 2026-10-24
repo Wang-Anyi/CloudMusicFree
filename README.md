@@ -13,7 +13,7 @@
 [![Cloudflare Pages](https://img.shields.io/badge/Deploy-Cloudflare%20Pages-F38020?style=flat-square&logo=cloudflare)](https://pages.cloudflare.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-[🚀 在线体验](https://cloudmusicfree.pages.dev) · [📖 功能清单](#-功能特性) · [☁️ 部署指南](#%EF%B8%8F-部署方式) · [💬 反馈](#-反馈与支持)
+[🚀 在线体验](https://cloudmusicfree.pages.dev) · [📖 功能清单](#-功能特性) · [☁️ 部署指南](#%EF%B8%8F-部署方式) · [💬 反馈](/issues/new)
 
 </div>
 
