@@ -4,14 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
+
+    <!-- ✅ Favicon：只保留本地 ico 为主图标，加 ?v=3 强制刷新缓存 -->
+    <link rel="icon" href="./assets/favicon.ico?v=3" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=3" type="image/x-icon">
+
     <!-- PWA -->
     <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
-    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
+    <!-- iOS 主屏幕图标建议用 png；ico 在 iOS 上不保证生效 -->
+    <link rel="apple-touch-icon" sizes="180x180" href="https://cdn-icons-png.flaticon.com/512/727/727245.png">
+
     <!-- 第三方库 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
