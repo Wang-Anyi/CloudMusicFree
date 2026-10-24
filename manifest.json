@@ -1,8 +1,9 @@
 {
+  "id": "./",
   "name": "云音匣 · 网易云免费播放器",
   "short_name": "云音匣",
   "description": "搜索、解析、播放网易云免费歌曲，支持歌词同步、歌单、下载、主题切换",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
