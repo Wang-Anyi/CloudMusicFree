@@ -5,19 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <!-- ✅ Favicon：只保留本地 ico 为主图标，加 ?v=3 强制刷新缓存 -->
-    <link rel="icon" href="./assets/favicon.ico?v=3" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=3" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=4" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=4" type="image/x-icon">
 
-    <!-- PWA -->
-    <link rel="manifest" href="./manifest.json">
+    <!-- ✅ manifest 加版本号，强制浏览器重新拉取 -->
+    <link rel="manifest" href="./manifest.json?v=3">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <!-- iOS 主屏幕图标建议用 png；ico 在 iOS 上不保证生效 -->
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png">
-    <!-- 第三方库 -->
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=3">
+
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@4.4.0/dist/browser-id3-writer.min.js"></script>
@@ -60,9 +58,9 @@
                         <input type="text" class="small-input" v-model="playlistUrlInput" placeholder="网易云歌单链接 或 ID (如 12390308466)">
                         <button class="btn btn-outline" @click="loadCustomPlaylist">📋 加载歌单</button>
                     </div>
+                    <!-- ✅ 只保留「我的歌单」 -->
                     <div class="id-parse-group" style="margin-top: 12px; background: transparent; padding: 0; gap: 12px;">
                         <button class="btn btn-outline" style="flex:1;" @click="openMyPlaylistsModal">💿 我的歌单</button>
-                        <button class="btn btn-outline" style="flex:1;" @click="loadLikedSongs">❤️ 我喜欢的音乐</button>
                     </div>
                 </div>
 
@@ -80,15 +78,13 @@
                     </div>
                 </div>
 
+                <!-- ✅ 只保留列表，无视图切换 -->
                 <div class="results-header">
-                    <span>🎶 {{ viewMode === 'grid' ? '歌曲网格' : '歌曲列表' }}</span>
-                    <div class="view-toggle">
-                        <button :class="['view-toggle-btn', { active: viewMode === 'list' }]" @click="viewMode = 'list'" title="列表视图">📋</button>
-                        <button :class="['view-toggle-btn', { active: viewMode === 'grid' }]" @click="viewMode = 'grid'" title="网格视图">🔲</button>
-                    </div>
+                    <span>🎶 歌曲列表</span>
+                    <span style="font-size:12px;">点击右侧▶️播放</span>
                 </div>
 
-                <div class="song-list" v-if="searchResults.length && viewMode === 'list'">
+                <div class="song-list" v-if="searchResults.length">
                     <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
                         <div class="song-info">
                             <div class="cover-wrapper">
@@ -108,20 +104,7 @@
                     </div>
                 </div>
 
-                <div class="song-grid" v-else-if="searchResults.length && viewMode === 'grid'">
-                    <div class="song-grid-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
-                        <div class="grid-cover-wrapper">
-                            <img class="grid-cover" :src="song.picUrl" @load="onImageLoad($event)" @error="onImageError($event)" alt="cover">
-                            <span class="grid-vip-badge" v-if="song.isVip">VIP</span>
-                            <div class="grid-play-overlay">▶</div>
-                        </div>
-                        <div class="grid-song-name" :title="song.name">{{ song.name }}</div>
-                        <div class="grid-song-artist" :title="song.artist">{{ song.artist }}</div>
-                    </div>
-                </div>
-
-                <div v-else-if="loadingSearch" class="empty-tip">⏳ 正在搜索，请稍候...</div>
-                <div v-else-if="loadingLiked" class="empty-tip">⏳ 正在加载「我喜欢的音乐」，突破 1000 首需分批请求，请耐心等候...</div>
+                <div v-else-if="loadingSearch" class="empty-tip">⏳ 正在加载，请稍候...</div>
                 <div v-else-if="!loadingSearch && searchPerformed && searchResults.length===0" class="empty-tip">😔 没有找到相关歌曲，换个关键词试试~</div>
                 <div v-else class="empty-tip">✨ 试试搜索「周杰伦」或点击上方歌单</div>
             </div>
@@ -327,7 +310,7 @@
                     </div>
 
                     <div class="settings-title" style="margin-top: 20px;">🍪 VIP Cookie（用于解析 VIP 歌曲、读取我的歌单）</div>
-                    <div class="settings-desc">粘贴完整的 Cookie（包含 MUSIC_U=... 等）。保存后，「我的歌单」「我喜欢的音乐」将自动识别</div>
+                    <div class="settings-desc">粘贴完整的 Cookie（包含 MUSIC_U=... 等）</div>
                     <textarea v-model="userCookie" rows="3" class="settings-input" placeholder="MUSIC_U=...; os=pc; appver=...;"></textarea>
                     <div class="settings-buttons">
                         <button class="btn btn-outline" @click="saveCookie">保存 Cookie</button>
@@ -546,7 +529,6 @@
         </div>
     </div>
 
-    <!-- iOS 安装指引 -->
     <div id="iosInstallModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 360px;">
             <div class="modal-header">
