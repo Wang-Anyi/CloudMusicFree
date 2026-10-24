@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=11" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=11" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=12" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=12" type="image/x-icon">
 
-    <link rel="manifest" href="./manifest.json?v=10">
+    <link rel="manifest" href="./manifest.json?v=11">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=10">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=11">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -115,9 +115,6 @@
                     <div class="now-playing">
                         <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover" @load="onImageLoad($event)">
                         <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
-                        <div v-if="hasMV" class="mv-badge-wrap">
-                            <button class="mv-badge" @click="showMV">🎬 观看 MV</button>
-                        </div>
                         <div class="player-controls">
                             <div class="progress-bar-container">
                                 <span class="time-current">{{ formatTime(currentTime) }}</span>
@@ -135,9 +132,6 @@
                             <button class="ctrl-btn icon-btn" @click="togglePlayPause">{{ isPlaying ? '⏸️' : '▶️' }}</button>
                             <button class="ctrl-btn icon-btn" @click="playNext">⏭️</button>
                             <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
-                            <button class="ctrl-btn" @click="showSimilarSongs">🔍 相似</button>
-                            <button class="ctrl-btn" @click="showMV">🎬 MV</button>
-                            <button class="ctrl-btn" @click="showComments">💬 评论</button>
                         </div>
                         <div v-if="loadingPlay" class="loading-tip">🎵 获取播放链接中，请稍后...</div>
                         <div v-if="playErrorMsg" class="loading-tip" style="background:#ffdad2; color:#b13e1a;">{{ playErrorMsg }}</div>
@@ -174,6 +168,7 @@
         </div>
     </div>
 
+    <!-- 全屏播放器 -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -216,6 +211,7 @@
         </div>
     </div>
 
+    <!-- 主题弹窗 -->
     <div id="themeModal" class="modal" style="display: none;">
         <div class="modal-content theme-modal-content">
             <div class="modal-header">
@@ -232,6 +228,7 @@
         </div>
     </div>
 
+    <!-- 设置弹窗 -->
     <div id="settingsModal" class="modal" style="display: none;">
         <div class="modal-content settings-modal-content">
             <div class="modal-header">
@@ -390,6 +387,7 @@
         </div>
     </div>
 
+    <!-- 反馈 -->
     <div id="feedbackModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 350px;">
             <div class="modal-header">
@@ -407,6 +405,7 @@
         </div>
     </div>
 
+    <!-- 公告 -->
     <div id="announcementModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 400px;">
             <div class="modal-header">
@@ -425,6 +424,7 @@
         </div>
     </div>
 
+    <!-- VIP -->
     <div id="vipModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -443,6 +443,7 @@
         </div>
     </div>
 
+    <!-- 播放队列 -->
     <div id="playQueueModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -472,6 +473,7 @@
         </div>
     </div>
 
+    <!-- 我的歌单 -->
     <div id="myPlaylistsModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -510,72 +512,7 @@
         </div>
     </div>
 
-    <div id="similarSongsModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
-                <span>🎵 相似歌曲推荐</span>
-                <button class="modal-close" id="closeSimilarBtn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="similar-list" v-if="similarSongs.length">
-                    <div v-for="song in similarSongs" :key="song.id" class="similar-item" @click="playSimilarSong(song)">
-                        <img :src="song.picUrl" class="similar-cover">
-                        <div class="similar-info">
-                            <div class="similar-name">
-                                {{ song.name }}
-                                <span class="badge-vip" v-if="song.isVip">VIP</span>
-                            </div>
-                            <div class="similar-artist">{{ song.artist }}</div>
-                        </div>
-                    </div>
-                </div>
-                <div v-else class="empty-tip">暂无相似歌曲</div>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn confirm" @click="closeSimilarModal">关闭</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="mvPlayerModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <span>🎬 MV播放</span>
-                <button class="modal-close" id="closeMvBtn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="mv-container">
-                    <iframe id="mvIframe" width="100%" height="400" frameborder="0" allowfullscreen></iframe>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn confirm" @click="closeMvModal">关闭</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="commentsModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 500px; max-height: 80vh;">
-            <div class="modal-header">
-                <span>💬 精彩评论</span>
-                <button class="modal-close" id="closeCommentsBtn">&times;</button>
-            </div>
-            <div class="modal-body" style="overflow-y: auto;">
-                <div v-for="comment in comments" :key="comment.commentId" class="comment-item">
-                    <img :src="comment.user.avatarUrl" class="comment-avatar">
-                    <div class="comment-content">
-                        <div class="comment-user">{{ comment.user.nickname }}</div>
-                        <div class="comment-text">{{ comment.content }}</div>
-                    </div>
-                </div>
-                <div v-if="!comments.length" class="empty-tip">暂无评论</div>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn confirm" @click="closeCommentsModal">关闭</button>
-            </div>
-        </div>
-    </div>
-
+    <!-- 睡眠 -->
     <div id="sleepTimerModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 300px;">
             <div class="modal-header">
@@ -596,6 +533,7 @@
         </div>
     </div>
 
+    <!-- iOS 安装 -->
     <div id="iosInstallModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 360px;">
             <div class="modal-header">
@@ -614,6 +552,7 @@
         </div>
     </div>
 
+    <!-- 迷你播放器 -->
     <div id="miniPlayer" class="mini-player" v-show="miniPlayerVisible" @click="restoreFromMini">
         <img :src="currentCover" class="mini-cover" alt="">
         <div class="mini-info">
