@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=5" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=5" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=6" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=6" type="image/x-icon">
 
-    <link rel="manifest" href="./manifest.json?v=4">
+    <link rel="manifest" href="./manifest.json?v=5">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=4">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=5">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -233,122 +233,156 @@
         </div>
     </div>
 
-    <!-- 设置弹窗 -->
+    <!-- ✅ 设置弹窗：900px 宽 + 两列网格 -->
     <div id="settingsModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 550px;">
+        <div class="modal-content settings-modal-content">
             <div class="modal-header">
                 <span>⚙️ 设置</span>
                 <button class="modal-close" id="closeSettingsBtn">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="settings-section">
-                    <div class="settings-title">🖼️ 自定义背景图片</div>
-                    <div class="settings-desc">输入图片URL（支持 http/https），刷新后自动应用</div>
-                    <input type="text" v-model="bgImageUrl" class="settings-input" placeholder="https://example.com/background.jpg">
-                    <div class="settings-buttons">
-                        <button class="btn btn-outline" @click="saveBgImage">应用背景</button>
-                        <button class="btn btn-outline" @click="resetBgImage">重置默认</button>
+                <div class="settings-grid">
+                    <!-- 背景图片（跨两列） -->
+                    <div class="settings-full">
+                        <div class="settings-title">🖼️ 自定义背景图片</div>
+                        <div class="settings-desc">输入图片URL（支持 http/https），刷新后自动应用</div>
+                        <input type="text" v-model="bgImageUrl" class="settings-input" placeholder="https://example.com/background.jpg">
+                        <div class="settings-buttons">
+                            <button class="btn btn-outline" @click="saveBgImage">应用背景</button>
+                            <button class="btn btn-outline" @click="resetBgImage">重置默认</button>
+                        </div>
                     </div>
 
-                    <div class="settings-title" style="margin-top: 20px;">🎚️ 音质偏好</div>
-                    <div class="settings-desc">从该音质开始，自动向下降级尝试</div>
-                    <select v-model="qualityLevel" @change="saveQualityLevel" class="settings-input">
-                        <option value="lossless">无损 (FLAC)</option>
-                        <option value="exhigh">极高 (320k)</option>
-                        <option value="higher">较高 (192k)</option>
-                        <option value="standard">标准 (128k)</option>
-                    </select>
-
-                    <!-- ✅ 新增：主容器透明度 -->
-                    <div class="settings-title" style="margin-top: 20px;">🪟 主容器透明度</div>
-                    <div class="settings-desc">范围 20-100%，控制最外层大容器的透明度</div>
-                    <div class="slider-container">
-                        <input type="range" v-model.number="containerOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveContainerOpacity">
-                        <span class="slider-value">{{ containerOpacity }}%</span>
+                    <!-- 音质偏好 -->
+                    <div>
+                        <div class="settings-title">🎚️ 音质偏好</div>
+                        <div class="settings-desc">从该音质开始，自动向下降级尝试</div>
+                        <select v-model="qualityLevel" @change="saveQualityLevel" class="settings-input">
+                            <option value="lossless">无损 (FLAC)</option>
+                            <option value="exhigh">极高 (320k)</option>
+                            <option value="higher">较高 (192k)</option>
+                            <option value="standard">标准 (128k)</option>
+                        </select>
                     </div>
 
-                    <div class="settings-title" style="margin-top: 20px;">🎴 卡片透明度</div>
-                    <div class="settings-desc">范围 20-100%，控制左栏、播放器、歌词、历史卡片的透明度</div>
-                    <div class="slider-container">
-                        <input type="range" v-model.number="cardOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveCardOpacity">
-                        <span class="slider-value">{{ cardOpacity }}%</span>
+                    <!-- 主容器透明度 -->
+                    <div>
+                        <div class="settings-title">🪟 主容器透明度</div>
+                        <div class="settings-desc">控制最外层大容器的透明度</div>
+                        <div class="slider-container">
+                            <input type="range" v-model.number="containerOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveContainerOpacity">
+                            <span class="slider-value">{{ containerOpacity }}%</span>
+                        </div>
                     </div>
 
-                    <div class="settings-title" style="margin-top: 20px;">✨ 背景模糊度</div>
-                    <div class="settings-desc">范围 0-100，数值越大背景越模糊</div>
-                    <div class="slider-container">
-                        <input type="range" v-model.number="bgBlur" min="0" max="100" step="1" class="settings-slider" @input="saveBgBlur">
-                        <span class="slider-value">{{ bgBlur }}%</span>
+                    <!-- 卡片透明度 -->
+                    <div>
+                        <div class="settings-title">🎴 卡片透明度</div>
+                        <div class="settings-desc">控制左栏、播放器、歌词、历史卡片</div>
+                        <div class="slider-container">
+                            <input type="range" v-model.number="cardOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveCardOpacity">
+                            <span class="slider-value">{{ cardOpacity }}%</span>
+                        </div>
                     </div>
 
-                    <div class="settings-title" style="margin-top: 20px;">🎭 卡片遮罩透明度</div>
-                    <div class="settings-desc">范围 20-100%，数值越大遮罩越明显</div>
-                    <div class="slider-container">
-                        <input type="range" v-model.number="maskOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveMaskOpacity">
-                        <span class="slider-value">{{ maskOpacity }}%</span>
+                    <!-- 背景模糊度 -->
+                    <div>
+                        <div class="settings-title">✨ 背景模糊度</div>
+                        <div class="settings-desc">数值越大背景越模糊</div>
+                        <div class="slider-container">
+                            <input type="range" v-model.number="bgBlur" min="0" max="100" step="1" class="settings-slider" @input="saveBgBlur">
+                            <span class="slider-value">{{ bgBlur }}%</span>
+                        </div>
                     </div>
 
-                    <div class="settings-title" style="margin-top: 20px;">🔮 毛玻璃强度（背景模糊）</div>
-                    <div class="settings-desc">范围 0-30px，数值越大背景模糊越强</div>
-                    <div class="slider-container">
-                        <input type="range" v-model.number="glassIntensity" min="0" max="30" step="1" class="settings-slider" @input="saveGlassIntensity">
-                        <span class="slider-value">{{ glassIntensity }}px</span>
+                    <!-- 卡片遮罩透明度 -->
+                    <div>
+                        <div class="settings-title">🎭 卡片遮罩透明度</div>
+                        <div class="settings-desc">数值越大遮罩越明显</div>
+                        <div class="slider-container">
+                            <input type="range" v-model.number="maskOpacity" min="20" max="100" step="1" class="settings-slider" @input="saveMaskOpacity">
+                            <span class="slider-value">{{ maskOpacity }}%</span>
+                        </div>
                     </div>
 
-                    <div class="settings-title" style="margin-top: 20px;">✨ 卡片背景模糊化开关</div>
-                    <label class="switch-label">
-                        <span class="switch-text">启用模糊效果</span>
-                        <label class="switch">
-                            <input type="checkbox" v-model="blurEnabled" @change="saveBlurEnabled">
-                            <span class="slider round"></span>
-                        </label>
-                    </label>
-
-                    <!-- ✅ 新增：屏幕方向 -->
-                    <div class="settings-title" style="margin-top: 20px;">📱 屏幕方向</div>
-                    <div class="settings-desc">需要先进入全屏才能锁定方向，不同浏览器支持程度不同</div>
-                    <div class="settings-buttons">
-                        <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'auto' }" @click="setOrientation('auto')">自动</button>
-                        <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'portrait' }" @click="setOrientation('portrait')">📱 竖屏</button>
-                        <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'landscape' }" @click="setOrientation('landscape')">💻 横屏</button>
+                    <!-- 毛玻璃强度 -->
+                    <div>
+                        <div class="settings-title">🔮 毛玻璃强度</div>
+                        <div class="settings-desc">数值越大背景模糊越强</div>
+                        <div class="slider-container">
+                            <input type="range" v-model.number="glassIntensity" min="0" max="30" step="1" class="settings-slider" @input="saveGlassIntensity">
+                            <span class="slider-value">{{ glassIntensity }}px</span>
+                        </div>
                     </div>
 
-                    <!-- ✅ 新增：全屏 -->
-                    <div class="settings-title" style="margin-top: 20px;">🔲 全屏</div>
-                    <div class="settings-desc">全屏模式下可配合方向锁定使用</div>
-                    <div class="settings-buttons">
-                        <button class="btn btn-outline" @click="toggleFullscreen">{{ isFullscreen ? '退出全屏' : '进入全屏' }}</button>
-                    </div>
-
-                    <div class="settings-title" style="margin-top: 20px;">🚀 进入时自动全屏</div>
-                    <div class="settings-desc">开启后，进入网站后首次点击/触摸屏幕会自动进入全屏</div>
-                    <label class="switch-label">
-                        <span class="switch-text">自动全屏</span>
-                        <label class="switch">
-                            <input type="checkbox" v-model="autoFullscreenOnEnter" @change="saveAutoFullscreen">
-                            <span class="slider round"></span>
-                        </label>
-                    </label>
-
-                    <div class="settings-title" style="margin-top: 20px;">🔤 自定义字体（TTF/OTF）</div>
-                    <div class="settings-desc">上传字体文件，立即应用</div>
-                    <div class="font-upload">
-                        <input type="file" accept=".ttf,.otf,.woff,.woff2" @change="applyCustomFont">
-                    </div>
-
-                    <div class="settings-title" style="margin-top: 20px;">📦 导入/导出设置</div>
-                    <div class="import-export-buttons">
-                        <button class="btn btn-outline" @click="exportSettings">导出设置</button>
-                        <label class="btn btn-outline" style="cursor:pointer;">导入设置
-                            <input type="file" accept=".json" @change="importSettings" style="display:none;" id="importSettingsInput">
+                    <!-- 卡片模糊开关 -->
+                    <div>
+                        <div class="settings-title">✨ 卡片背景模糊化开关</div>
+                        <div class="settings-desc">开启后卡片叠加遮罩层</div>
+                        <label class="switch-label">
+                            <span class="switch-text">启用模糊效果</span>
+                            <label class="switch">
+                                <input type="checkbox" v-model="blurEnabled" @change="saveBlurEnabled">
+                                <span class="slider round"></span>
+                            </label>
                         </label>
                     </div>
 
-                    <div class="settings-title" style="margin-top: 20px;">🍪 VIP Cookie（用于解析 VIP 歌曲、读取我的歌单）</div>
-                    <div class="settings-desc">粘贴完整的 Cookie（包含 MUSIC_U=... 等）</div>
-                    <textarea v-model="userCookie" rows="3" class="settings-input" placeholder="MUSIC_U=...; os=pc; appver=...;"></textarea>
-                    <div class="settings-buttons">
-                        <button class="btn btn-outline" @click="saveCookie">保存 Cookie</button>
+                    <!-- 显示与全屏组（跨两列） -->
+                    <div class="settings-full">
+                        <div class="settings-title">📱 屏幕方向</div>
+                        <div class="settings-desc">需要先进入全屏才能锁定方向，不同浏览器支持程度不同</div>
+                        <div class="settings-buttons">
+                            <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'auto' }" @click="setOrientation('auto')">自动</button>
+                            <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'portrait' }" @click="setOrientation('portrait')">📱 竖屏</button>
+                            <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'landscape' }" @click="setOrientation('landscape')">💻 横屏</button>
+                        </div>
+
+                        <div class="settings-title" style="margin-top: 16px;">🔲 全屏</div>
+                        <div class="settings-desc">全屏模式下可配合方向锁定使用</div>
+                        <div class="settings-buttons">
+                            <button class="btn btn-outline" @click="toggleFullscreen">{{ isFullscreen ? '退出全屏' : '进入全屏' }}</button>
+                        </div>
+
+                        <div class="settings-title" style="margin-top: 16px;">🚀 进入时自动全屏</div>
+                        <div class="settings-desc">开启后，进入网站后首次点击/触摸屏幕会自动进入全屏</div>
+                        <label class="switch-label">
+                            <span class="switch-text">自动全屏</span>
+                            <label class="switch">
+                                <input type="checkbox" v-model="autoFullscreenOnEnter" @change="saveAutoFullscreen">
+                                <span class="slider round"></span>
+                            </label>
+                        </label>
+                    </div>
+
+                    <!-- 自定义字体（跨两列） -->
+                    <div class="settings-full">
+                        <div class="settings-title">🔤 自定义字体（TTF/OTF）</div>
+                        <div class="settings-desc">上传字体文件，立即应用</div>
+                        <div class="font-upload">
+                            <input type="file" accept=".ttf,.otf,.woff,.woff2" @change="applyCustomFont">
+                        </div>
+                    </div>
+
+                    <!-- 导入/导出（跨两列） -->
+                    <div class="settings-full">
+                        <div class="settings-title">📦 导入/导出设置</div>
+                        <div class="import-export-buttons">
+                            <button class="btn btn-outline" @click="exportSettings">导出设置</button>
+                            <label class="btn btn-outline" style="cursor:pointer;">导入设置
+                                <input type="file" accept=".json" @change="importSettings" style="display:none;" id="importSettingsInput">
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- VIP Cookie（跨两列） -->
+                    <div class="settings-full">
+                        <div class="settings-title">🍪 VIP Cookie（用于解析 VIP 歌曲、读取我的歌单）</div>
+                        <div class="settings-desc">粘贴完整的 Cookie（包含 MUSIC_U=... 等）</div>
+                        <textarea v-model="userCookie" rows="3" class="settings-input" placeholder="MUSIC_U=...; os=pc; appver=...;"></textarea>
+                        <div class="settings-buttons">
+                            <button class="btn btn-outline" @click="saveCookie">保存 Cookie</button>
+                        </div>
                     </div>
                 </div>
             </div>
