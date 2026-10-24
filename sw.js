@@ -1,10 +1,14 @@
-const CACHE_NAME = 'cloudmusic-v1';
+const CACHE_NAME = 'cloudmusic-v2';
 const ASSETS = ['./', './index.html', './script.js', './style.css', './manifest.json'];
+const OPTIONAL_ASSETS = ['./assets/icon-192.png', './assets/icon-512.png', './assets/favicon.ico'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then((cache) => cache.addAll(ASSETS))
+            .then(() => Promise.all(
+                OPTIONAL_ASSETS.map((url) => cache.add(url).catch(() => {}))
+            ))
             .then(() => self.skipWaiting())
     );
 });
@@ -20,8 +24,6 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
     const url = new URL(event.request.url);
-
-    // 只接管同源请求；CDN / API 请求直接走网络，避免缓存干扰
     if (url.origin !== location.origin) return;
 
     event.respondWith(
