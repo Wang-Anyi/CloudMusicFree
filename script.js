@@ -16,19 +16,20 @@ const extractColorFromImage = (url) => {
         img.src = url;
     });
 };
-// ✅ 修复：有自定义背景图时跳过动态渐变，避免覆盖
+
+// ✅ 有自定义背景图时跳过动态渐变
 const setDynamicGradient = async (coverUrl) => {
-    if (localStorage.getItem('customBgImage')) return;
+    if (window.__hasCustomBg && window.__hasCustomBg()) return;
     if (!coverUrl || !coverUrl.startsWith('http')) return;
     const color = await extractColorFromImage(coverUrl);
     if (color) {
-        document.body.style.backgroundImage = 'none';
         document.body.style.background = `radial-gradient(circle at 10% 20%, ${color}, rgba(0,0,0,0.8))`;
     }
 };
 
 createApp({
     setup() {
+        // ========== 响应式数据 ==========
         const searchKeyword = ref('');
         const songIdInput = ref('');
         const playlistUrlInput = ref('');
@@ -92,7 +93,6 @@ createApp({
         const maskOpacity = ref(30);
         const glassIntensity = ref(12);
 
-        // ✅ 新增：方向 / 全屏 / 自动全屏
         const orientationMode = ref(localStorage.getItem('orientationMode') || 'auto');
         const isFullscreen = ref(false);
         const autoFullscreenOnEnter = ref(localStorage.getItem('autoFullscreenOnEnter') === 'true');
@@ -101,17 +101,15 @@ createApp({
 
         const QUALITY_LEVELS = ['lossless', 'exhigh', 'higher', 'standard'];
         const qualityLevel = ref(localStorage.getItem('qualityLevel') || 'exhigh');
-        const saveQualityLevel = () => {
-            localStorage.setItem('qualityLevel', qualityLevel.value);
-            playErrorMsg.value = `✅ 音质偏好已设为 ${qualityLevel.value}`;
-            setTimeout(() => { if (playErrorMsg.value.includes('音质偏好')) playErrorMsg.value = ''; }, 2000);
-        };
 
         const myPlaylists = ref([]);
         const loadingMyPlaylists = ref(false);
 
         const createdPlaylists = computed(() => myPlaylists.value.filter(p => !p.subscribed));
         const subscribedPlaylists = computed(() => myPlaylists.value.filter(p => p.subscribed));
+
+        // ✅ 暴露给 setDynamicGradient 使用
+        window.__hasCustomBg = () => !!(bgImageUrl.value && bgImageUrl.value.trim());
 
         // ========== PWA 安装 ==========
         const deferredInstallPrompt = ref(null);
@@ -153,7 +151,7 @@ createApp({
             }
         };
 
-        // ========== ✅ 全屏 / 方向 ==========
+        // ========== 全屏 / 方向 ==========
         const toggleFullscreen = async () => {
             try {
                 if (document.fullscreenElement) {
@@ -241,6 +239,7 @@ createApp({
             else document.body.classList.remove('is-fullscreen');
         };
 
+        // ========== API 列表 ==========
         const API_LIST = [
             'https://meting-api-pi-one.vercel.app',
             'https://api-enhanced-delta-six.vercel.app',
@@ -255,6 +254,7 @@ createApp({
         ];
         let currentApiIndex = 0;
 
+        // ========== 辅助函数 ==========
         const formatDuration = (ms) => {
             if (!ms) return '00:00';
             const sec = Math.floor(ms / 1000);
@@ -303,23 +303,111 @@ createApp({
             console.error(`[${context}]`, error);
         };
 
+        // ========== 背景应用（核心） ==========
+        const applyBgImage = () => {
+            if (bgImageUrl.value && bgImageUrl.value.trim()) {
+                document.body.style.background = `url(${bgImageUrl.value}) center center / cover no-repeat fixed`;
+            } else {
+                document.body.style.background = '';
+            }
+        };
+
+        // ========== 一次性加载所有设置并生效 ==========
+        const loadAllSettings = () => {
+            // 1. 主题（会清空 class，最先设置）
+            const st = localStorage.getItem('appTheme');
+            currentTheme.value = (st && st.includes('theme')) ? st : 'theme-default';
+            document.body.className = currentTheme.value;
+
+            // 2. 背景图
+            const sb = localStorage.getItem('customBgImage');
+            if (sb) {
+                bgImageUrl.value = sb;
+                applyBgImage();
+                document.body.classList.add('custom-bg');
+            }
+
+            // 3. 卡片模糊开关
+            const sbl = localStorage.getItem('blurEnabled');
+            if (sbl !== null) {
+                blurEnabled.value = sbl === 'true';
+                if (blurEnabled.value) document.body.classList.add('blur-enabled');
+            }
+
+            // 4. 背景模糊度
+            const sbb = localStorage.getItem('bgBlur');
+            if (sbb !== null) {
+                bgBlur.value = parseInt(sbb);
+                document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`);
+            }
+
+            // 5. 卡片透明度
+            const sco = localStorage.getItem('cardOpacity');
+            if (sco !== null) {
+                cardOpacity.value = parseInt(sco);
+                document.body.style.setProperty('--card-opacity', cardOpacity.value / 100);
+            }
+
+            // 6. 主容器透明度
+            const sct = localStorage.getItem('containerOpacity');
+            if (sct !== null) {
+                containerOpacity.value = parseInt(sct);
+                document.body.style.setProperty('--container-opacity', containerOpacity.value / 100);
+            }
+
+            // 7. 遮罩透明度
+            const smo = localStorage.getItem('maskOpacity');
+            if (smo !== null) {
+                maskOpacity.value = parseInt(smo);
+                document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100);
+            }
+
+            // 8. 毛玻璃强度
+            const sg = localStorage.getItem('glassIntensity');
+            if (sg !== null) {
+                glassIntensity.value = parseInt(sg);
+                const app = document.querySelector('.app-container');
+                if (app) app.style.backdropFilter = `blur(${glassIntensity.value}px)`;
+            }
+
+            // 9. 音质偏好
+            const sql = localStorage.getItem('qualityLevel');
+            if (sql) qualityLevel.value = sql;
+
+            // 10. 屏幕方向
+            const som = localStorage.getItem('orientationMode');
+            if (som) orientationMode.value = som;
+
+            // 11. 自动全屏
+            const saf = localStorage.getItem('autoFullscreenOnEnter');
+            if (saf !== null) autoFullscreenOnEnter.value = saf === 'true';
+
+            // 12. 迷你播放器
+            const smp = localStorage.getItem('miniPlayerVisible');
+            if (smp === 'true') miniPlayerVisible.value = true;
+
+            // 13. Cookie
+            const sc = localStorage.getItem('neteaseCookie');
+            if (sc) userCookie.value = sc;
+        };
+
+        // ========== 主题 ==========
         const openThemeModal = () => { document.getElementById('themeModal').style.display = 'flex'; };
         const closeThemeModal = () => { document.getElementById('themeModal').style.display = 'none'; };
-        // ✅ 修复：切换主题时保留 custom-bg / blur-enabled 标记
         const setTheme = (themeName) => {
             currentTheme.value = themeName;
             localStorage.setItem('appTheme', themeName);
             document.body.className = currentTheme.value;
-            if (bgImageUrl.value && bgImageUrl.value.trim()) document.body.classList.add('custom-bg');
+            // ✅ 主题切换后重新应用背景和模糊
+            if (bgImageUrl.value && bgImageUrl.value.trim()) {
+                document.body.classList.add('custom-bg');
+                applyBgImage();
+            }
             if (blurEnabled.value) document.body.classList.add('blur-enabled');
             closeThemeModal();
         };
-        const loadTheme = () => {
-            const saved = localStorage.getItem('appTheme');
-            currentTheme.value = (saved && saved.includes('theme')) ? saved : 'theme-default';
-            document.body.className = currentTheme.value;
-        };
 
+        // ========== 歌词 ==========
         const scrollLyricsToActive = () => {
             if (!lyricsContainer.value) return;
             const container = lyricsContainer.value;
@@ -447,6 +535,7 @@ createApp({
             }
         };
 
+        // ========== 通用请求 ==========
         const requestWithFallback = async (urlPath, options = {}) => {
             const maxRetries = API_LIST.length;
             let lastError = null;
@@ -471,6 +560,7 @@ createApp({
             throw lastError || new Error('所有 API 均不可用');
         };
 
+        // ========== 图片加载 ==========
         const onImageLoad = (event) => {
             const img = event.target;
             const wrapper = img.closest('.cover-wrapper');
@@ -490,6 +580,7 @@ createApp({
             }
         };
 
+        // ========== 搜索 ==========
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -547,6 +638,7 @@ createApp({
             }
         };
 
+        // ========== 解析优先级 ==========
         const outerUrlCache = new Map();
         const probeOuterUrl = (songId, allowShort = false) => {
             const key = `${songId}_${allowShort}`;
@@ -639,6 +731,7 @@ createApp({
             throw new Error('无法获取歌曲详情');
         };
 
+        // ========== 播放核心 ==========
         const playSongById = async (songId, songName, artistName, coverUrl, addToQueue = true, queueIndex = -1) => {
             if (!songId) return;
             loadingPlay.value = true;
@@ -696,6 +789,7 @@ createApp({
             }
         };
 
+        // ========== 队列 ==========
         const saveQueueToLocal = () => {
             localStorage.setItem('playQueue', JSON.stringify(queue.value));
             localStorage.setItem('currentQueueIndex', currentQueueIndex);
@@ -768,6 +862,7 @@ createApp({
         };
         const closePlayQueueModal = () => { document.getElementById('playQueueModal').style.display = 'none'; };
 
+        // ========== 迷你播放器 ==========
         const toggleMiniPlayer = () => {
             miniPlayerVisible.value = !miniPlayerVisible.value;
             localStorage.setItem('miniPlayerVisible', miniPlayerVisible.value);
@@ -775,6 +870,7 @@ createApp({
         const restoreFromMini = () => { miniPlayerVisible.value = false; localStorage.setItem('miniPlayerVisible', false); };
         const closeMiniPlayer = () => { miniPlayerVisible.value = false; localStorage.setItem('miniPlayerVisible', false); };
 
+        // ========== 相似歌曲 ==========
         const showSimilarSongs = async () => {
             if (!currentSongId) { playErrorMsg.value = '请先播放一首歌曲'; return; }
             try {
@@ -795,6 +891,7 @@ createApp({
         };
         const closeSimilarModal = () => { document.getElementById('similarSongsModal').style.display = 'none'; };
 
+        // ========== MV / 评论 / 睡眠 / 分享 ==========
         const showMV = async () => {
             if (!currentSongId) { playErrorMsg.value = '请先播放一首歌曲'; return; }
             try {
@@ -852,6 +949,7 @@ createApp({
             document.body.removeChild(div);
         };
 
+        // ========== 下载 ==========
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src) { playErrorMsg.value = '没有正在播放的歌曲'; return; }
@@ -881,6 +979,7 @@ createApp({
             } catch (e) { playErrorMsg.value = '下载失败'; }
         };
 
+        // ========== 播放控制 ==========
         const togglePlayPause = () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src) return;
@@ -924,6 +1023,7 @@ createApp({
         };
         const onAudioError = (e) => { console.error('Audio error:', e); playErrorMsg.value = '播放失败，可能是音频链接无效'; isPlaying.value = false; fullscreenIsPlaying.value = false; };
 
+        // ========== 全屏播放器 ==========
         const openFullscreenPlayer = () => {
             if (!currentSongName.value) { playErrorMsg.value = '请先播放一首歌曲'; setTimeout(() => { if (playErrorMsg.value === '请先播放一首歌曲') playErrorMsg.value = ''; }, 2000); return; }
             fullscreenPlayerVisible.value = true;
@@ -965,51 +1065,11 @@ createApp({
         };
         const fullscreenTogglePlayPause = togglePlayPause;
 
-        // ✅ 修复：只依赖 bgImageUrl，不手动写 body.style
-        const bodyBackgroundStyle = computed(() => {
-            if (bgImageUrl.value && bgImageUrl.value.trim()) {
-                return {
-                    backgroundImage: `url(${bgImageUrl.value})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center center',
-                    backgroundAttachment: 'fixed',
-                    backgroundRepeat: 'no-repeat'
-                };
-            }
-            return {};
-        });
-
-        const loadBgSettings = () => {
-            const sb = localStorage.getItem('customBgImage');
-            if (sb) {
-                bgImageUrl.value = sb;
-                document.body.classList.add('custom-bg');
-            }
-            const sbl = localStorage.getItem('blurEnabled');
-            if (sbl !== null) { blurEnabled.value = sbl === 'true'; if (blurEnabled.value) document.body.classList.add('blur-enabled'); else document.body.classList.remove('blur-enabled'); }
-            const sbb = localStorage.getItem('bgBlur');
-            if (sbb !== null) { bgBlur.value = parseInt(sbb); document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`); }
-            const sco = localStorage.getItem('cardOpacity');
-            if (sco !== null) { cardOpacity.value = parseInt(sco); document.body.style.setProperty('--card-opacity', cardOpacity.value / 100); }
-            // ✅ 读取主容器透明度
-            const sct = localStorage.getItem('containerOpacity');
-            if (sct !== null) {
-                containerOpacity.value = parseInt(sct);
-                document.body.style.setProperty('--container-opacity', containerOpacity.value / 100);
-            }
-            const smo = localStorage.getItem('maskOpacity');
-            if (smo !== null) { maskOpacity.value = parseInt(smo); document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100); }
-            const sg = localStorage.getItem('glassIntensity');
-            if (sg !== null) { glassIntensity.value = parseInt(sg); document.querySelector('.app-container').style.backdropFilter = `blur(${glassIntensity.value}px)`; }
-            const sm = localStorage.getItem('miniPlayerVisible');
-            if (sm === 'true') miniPlayerVisible.value = true;
-            const savedCookie = localStorage.getItem('neteaseCookie');
-            if (savedCookie) userCookie.value = savedCookie;
-        };
-
+        // ========== 背景设置 ==========
         const saveBgImage = () => {
             if (!bgImageUrl.value.trim()) { playErrorMsg.value = '请输入图片URL'; return; }
             localStorage.setItem('customBgImage', bgImageUrl.value);
+            applyBgImage();
             document.body.classList.add('custom-bg');
             playErrorMsg.value = '✅ 背景已更新';
             setTimeout(() => { if (playErrorMsg.value === '✅ 背景已更新') playErrorMsg.value = ''; }, 2000);
@@ -1017,8 +1077,9 @@ createApp({
         const resetBgImage = () => {
             bgImageUrl.value = '';
             localStorage.removeItem('customBgImage');
+            applyBgImage();
             document.body.classList.remove('custom-bg');
-            document.body.style.backgroundImage = '';
+            if (currentCover.value) setDynamicGradient(currentCover.value);
             playErrorMsg.value = '✅ 已恢复默认背景';
             setTimeout(() => { if (playErrorMsg.value.includes('默认背景')) playErrorMsg.value = ''; }, 2000);
         };
@@ -1028,11 +1089,19 @@ createApp({
         const saveContainerOpacity = () => { localStorage.setItem('containerOpacity', containerOpacity.value); document.body.style.setProperty('--container-opacity', containerOpacity.value / 100); };
         const saveMaskOpacity = () => { localStorage.setItem('maskOpacity', maskOpacity.value); document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100); };
         const saveGlassIntensity = () => { localStorage.setItem('glassIntensity', glassIntensity.value); document.querySelector('.app-container').style.backdropFilter = `blur(${glassIntensity.value}px)`; };
+
+        const saveQualityLevel = () => {
+            localStorage.setItem('qualityLevel', qualityLevel.value);
+            playErrorMsg.value = `✅ 音质偏好已设为 ${qualityLevel.value}`;
+            setTimeout(() => { if (playErrorMsg.value.includes('音质偏好')) playErrorMsg.value = ''; }, 2000);
+        };
+
         const saveCookie = () => {
             localStorage.setItem('neteaseCookie', userCookie.value);
             playErrorMsg.value = '✅ Cookie 已保存';
             setTimeout(() => { if (playErrorMsg.value === '✅ Cookie 已保存') playErrorMsg.value = ''; }, 2000);
         };
+
         const exportSettings = () => {
             const s = {
                 theme: currentTheme.value,
@@ -1098,6 +1167,7 @@ createApp({
             }
         };
 
+        // ========== 热门歌单 ==========
         const loadPlaylists = async () => {
             const ids = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
             const randomIds = ids.sort(() => 0.5 - Math.random()).slice(0, 4);
@@ -1116,6 +1186,7 @@ createApp({
             ];
         };
 
+        // ========== 歌单加载（playlist/detail + playlist/track/all + 分页 + 兜底） ==========
         const fetchPlaylistTracks = async (playlistId, plName, isCustom = false) => {
             searchResults.value = [];
             searchPerformed.value = true;
@@ -1245,6 +1316,7 @@ createApp({
             await fetchPlaylistTracks(id, `自定义歌单 ${id}`, true);
         };
 
+        // ========== 我的歌单 ==========
         let cachedUid = null;
         const getMyUid = async () => {
             if (cachedUid) return cachedUid;
@@ -1311,6 +1383,7 @@ createApp({
         };
         const closeMyPlaylistsModal = () => { document.getElementById('myPlaylistsModal').style.display = 'none'; };
 
+        // ========== VIP 弹窗 ==========
         let pendingVipSong = null;
         const showVipModal = (song) => {
             pendingVipSong = song;
@@ -1371,15 +1444,14 @@ createApp({
             if (iosConfirm) iosConfirm.onclick = () => { document.getElementById('iosInstallModal').style.display = 'none'; };
         };
 
+        // ========== 挂载 ==========
         onMounted(() => {
-            loadTheme();
-            loadBgSettings(); // ✅ 先读背景，确保刷新后立刻应用
+            loadAllSettings();          // ✅ 一次性加载全部设置并生效
             loadPlaylists();
             loadQueueFromLocal();
             initModalEvents();
             window.addEventListener('keydown', handleKeydown);
             document.addEventListener('fullscreenchange', onFullscreenChange);
-            // ✅ 若已开启自动全屏，进入即准备监听首次交互
             if (autoFullscreenOnEnter.value) setupAutoFullscreen();
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW注册失败', e));
@@ -1413,7 +1485,7 @@ createApp({
             fullscreenSeek, fullscreenTogglePlayPause,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
-            bgImageUrl, blurEnabled, bgBlur, cardOpacity, containerOpacity, maskOpacity, glassIntensity, bodyBackgroundStyle,
+            bgImageUrl, blurEnabled, bgBlur, cardOpacity, containerOpacity, maskOpacity, glassIntensity,
             saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveContainerOpacity, saveMaskOpacity, saveGlassIntensity,
             openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal,
             queue, playFromQueue, removeFromQueue, clearQueue, toggleLoopMode, loopMode,
