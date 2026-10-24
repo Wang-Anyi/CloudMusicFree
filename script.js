@@ -1,5 +1,6 @@
 const { createApp, ref, onMounted, nextTick, computed, watch } = Vue;
 
+/* ========== 动态渐变背景 ========== */
 const extractColorFromImage = (url) => {
     return new Promise((resolve) => {
         const img = new Image();
@@ -92,6 +93,8 @@ createApp({
         const containerOpacity = ref(75);
         const maskOpacity = ref(30);
         const glassIntensity = ref(12);
+        // ✅ 字体大小（80-140，默认 100）
+        const fontScale = ref(parseInt(localStorage.getItem('fontScale') || '100'));
 
         const orientationMode = ref(localStorage.getItem('orientationMode') || 'auto');
         const isFullscreen = ref(false);
@@ -108,7 +111,6 @@ createApp({
         const createdPlaylists = computed(() => myPlaylists.value.filter(p => !p.subscribed));
         const subscribedPlaylists = computed(() => myPlaylists.value.filter(p => p.subscribed));
 
-        // ✅ 暴露给 setDynamicGradient 使用
         window.__hasCustomBg = () => !!(bgImageUrl.value && bgImageUrl.value.trim());
 
         // ========== PWA 安装 ==========
@@ -303,7 +305,7 @@ createApp({
             console.error(`[${context}]`, error);
         };
 
-        // ========== 背景应用（核心） ==========
+        // ========== 背景应用 ==========
         const applyBgImage = () => {
             if (bgImageUrl.value && bgImageUrl.value.trim()) {
                 document.body.style.background = `url(${bgImageUrl.value}) center center / cover no-repeat fixed`;
@@ -314,7 +316,7 @@ createApp({
 
         // ========== 一次性加载所有设置并生效 ==========
         const loadAllSettings = () => {
-            // 1. 主题（会清空 class，最先设置）
+            // 1. 主题
             const st = localStorage.getItem('appTheme');
             currentTheme.value = (st && st.includes('theme')) ? st : 'theme-default';
             document.body.className = currentTheme.value;
@@ -370,6 +372,13 @@ createApp({
                 if (app) app.style.backdropFilter = `blur(${glassIntensity.value}px)`;
             }
 
+            // 8.5 字体大小
+            const sfs = localStorage.getItem('fontScale');
+            if (sfs !== null) {
+                fontScale.value = parseInt(sfs);
+                document.documentElement.style.setProperty('--font-scale', fontScale.value / 100);
+            }
+
             // 9. 音质偏好
             const sql = localStorage.getItem('qualityLevel');
             if (sql) qualityLevel.value = sql;
@@ -398,7 +407,6 @@ createApp({
             currentTheme.value = themeName;
             localStorage.setItem('appTheme', themeName);
             document.body.className = currentTheme.value;
-            // ✅ 主题切换后重新应用背景和模糊
             if (bgImageUrl.value && bgImageUrl.value.trim()) {
                 document.body.classList.add('custom-bg');
                 applyBgImage();
@@ -1089,6 +1097,11 @@ createApp({
         const saveContainerOpacity = () => { localStorage.setItem('containerOpacity', containerOpacity.value); document.body.style.setProperty('--container-opacity', containerOpacity.value / 100); };
         const saveMaskOpacity = () => { localStorage.setItem('maskOpacity', maskOpacity.value); document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100); };
         const saveGlassIntensity = () => { localStorage.setItem('glassIntensity', glassIntensity.value); document.querySelector('.app-container').style.backdropFilter = `blur(${glassIntensity.value}px)`; };
+        // ✅ 保存字体大小
+        const saveFontScale = () => {
+            localStorage.setItem('fontScale', fontScale.value);
+            document.documentElement.style.setProperty('--font-scale', fontScale.value / 100);
+        };
 
         const saveQualityLevel = () => {
             localStorage.setItem('qualityLevel', qualityLevel.value);
@@ -1102,6 +1115,108 @@ createApp({
             setTimeout(() => { if (playErrorMsg.value === '✅ Cookie 已保存') playErrorMsg.value = ''; }, 2000);
         };
 
+        // ========== 自定义字体持久化（IndexedDB） ==========
+        const FONT_DB_NAME = 'cloudmusic-db';
+        const FONT_STORE = 'fonts';
+        const FONT_KEY = 'custom-font';
+
+        const openFontDB = () => {
+            if (!window.idb || !window.idb.openDB) return Promise.reject(new Error('idb 库未加载'));
+            return window.idb.openDB(FONT_DB_NAME, 1, {
+                upgrade(db) {
+                    if (!db.objectStoreNames.contains(FONT_STORE)) {
+                        db.createObjectStore(FONT_STORE);
+                    }
+                }
+            });
+        };
+
+        const applyFontFromData = (arrayBuffer, fileName, mime) => {
+            const oldStyle = document.getElementById('custom-font-style');
+            if (oldStyle) oldStyle.remove();
+            if (window.__customFontUrl) {
+                try { URL.revokeObjectURL(window.__customFontUrl); } catch (e) {}
+                window.__customFontUrl = null;
+            }
+            const blob = new Blob([arrayBuffer], { type: mime });
+            const fontUrl = URL.createObjectURL(blob);
+            window.__customFontUrl = fontUrl;
+            const format = mime.includes('woff2') ? 'woff2'
+                : mime.includes('woff') ? 'woff'
+                : mime.includes('otf') ? 'opentype'
+                : 'truetype';
+            const style = document.createElement('style');
+            style.id = 'custom-font-style';
+            style.textContent = `
+                @font-face {
+                    font-family: 'CustomFont';
+                    src: url('${fontUrl}') format('${format}');
+                    font-display: swap;
+                }
+                * {
+                    font-family: 'CustomFont', system-ui, 'Segoe UI', 'PingFang SC', Roboto, sans-serif !important;
+                }
+            `;
+            document.head.appendChild(style);
+        };
+
+        const applyCustomFont = async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const ext = file.name.split('.').pop().toLowerCase();
+                const mimeMap = { ttf: 'font/ttf', otf: 'font/otf', woff: 'font/woff', woff2: 'font/woff2' };
+                const mime = mimeMap[ext] || 'font/ttf';
+
+                applyFontFromData(arrayBuffer, file.name, mime);
+
+                const db = await openFontDB();
+                await db.put(FONT_STORE, { data: arrayBuffer, name: file.name, mime, ts: Date.now() }, FONT_KEY);
+                db.close();
+
+                playErrorMsg.value = '✅ 字体已应用并保存，刷新后仍生效';
+                setTimeout(() => { if (playErrorMsg.value.includes('字体')) playErrorMsg.value = ''; }, 2500);
+                event.target.value = '';
+            } catch (e) {
+                console.error('字体保存失败', e);
+                playErrorMsg.value = '❌ 字体保存失败：' + (e.message || '未知错误');
+            }
+        };
+
+        const loadCustomFontFromDB = async () => {
+            try {
+                const db = await openFontDB();
+                const fontData = await db.get(FONT_STORE, FONT_KEY);
+                db.close();
+                if (fontData && fontData.data) {
+                    applyFontFromData(fontData.data, fontData.name, fontData.mime);
+                    console.log('[字体] 已从 IndexedDB 恢复自定义字体');
+                }
+            } catch (e) {
+                console.warn('[字体] 读取自定义字体失败', e);
+            }
+        };
+
+        const restoreDefaultFont = async () => {
+            try {
+                const style = document.getElementById('custom-font-style');
+                if (style) style.remove();
+                if (window.__customFontUrl) {
+                    try { URL.revokeObjectURL(window.__customFontUrl); } catch (e) {}
+                    window.__customFontUrl = null;
+                }
+                const db = await openFontDB();
+                await db.delete(FONT_STORE, FONT_KEY);
+                db.close();
+                playErrorMsg.value = '✅ 已恢复默认字体';
+                setTimeout(() => { if (playErrorMsg.value.includes('字体')) playErrorMsg.value = ''; }, 2500);
+            } catch (e) {
+                playErrorMsg.value = '❌ 恢复默认字体失败';
+            }
+        };
+
+        // ========== 导出/导入设置 ==========
         const exportSettings = () => {
             const s = {
                 theme: currentTheme.value,
@@ -1111,6 +1226,7 @@ createApp({
                 containerOpacity: containerOpacity.value,
                 maskOpacity: maskOpacity.value,
                 glassIntensity: glassIntensity.value,
+                fontScale: fontScale.value,
                 blurEnabled: blurEnabled.value,
                 qualityLevel: qualityLevel.value,
                 orientationMode: orientationMode.value,
@@ -1133,6 +1249,7 @@ createApp({
                     if (s.containerOpacity !== undefined) { containerOpacity.value = s.containerOpacity; saveContainerOpacity(); }
                     if (s.maskOpacity !== undefined) { maskOpacity.value = s.maskOpacity; saveMaskOpacity(); }
                     if (s.glassIntensity !== undefined) { glassIntensity.value = s.glassIntensity; saveGlassIntensity(); }
+                    if (s.fontScale !== undefined) { fontScale.value = s.fontScale; saveFontScale(); }
                     if (s.blurEnabled !== undefined) { blurEnabled.value = s.blurEnabled; saveBlurEnabled(); }
                     if (s.qualityLevel) { qualityLevel.value = s.qualityLevel; saveQualityLevel(); }
                     if (s.orientationMode) { orientationMode.value = s.orientationMode; localStorage.setItem('orientationMode', s.orientationMode); }
@@ -1147,14 +1264,7 @@ createApp({
             };
             reader.readAsText(file);
         };
-        const applyCustomFont = (event) => {
-            const file = event.target.files[0]; if (!file) return;
-            const fontUrl = URL.createObjectURL(file);
-            const style = document.createElement('style');
-            style.textContent = `@font-face { font-family: 'CustomFont'; src: url('${fontUrl}') format('truetype'); } * { font-family: 'CustomFont', system-ui, sans-serif !important; }`;
-            document.head.appendChild(style);
-            playErrorMsg.value = '✅ 字体已应用'; setTimeout(() => { if (playErrorMsg.value === '✅ 字体已应用') playErrorMsg.value = ''; }, 2000);
-        };
+
         const handleKeydown = (event) => {
             const t = event.target;
             if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
@@ -1446,7 +1556,8 @@ createApp({
 
         // ========== 挂载 ==========
         onMounted(() => {
-            loadAllSettings();          // ✅ 一次性加载全部设置并生效
+            loadAllSettings();
+            loadCustomFontFromDB();
             loadPlaylists();
             loadQueueFromLocal();
             initModalEvents();
@@ -1487,6 +1598,7 @@ createApp({
             currentTheme, openThemeModal, closeThemeModal, setTheme,
             bgImageUrl, blurEnabled, bgBlur, cardOpacity, containerOpacity, maskOpacity, glassIntensity,
             saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveContainerOpacity, saveMaskOpacity, saveGlassIntensity,
+            fontScale, saveFontScale,
             openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal,
             queue, playFromQueue, removeFromQueue, clearQueue, toggleLoopMode, loopMode,
             openPlayQueueModal, closePlayQueueModal,
@@ -1495,7 +1607,7 @@ createApp({
             showMV, closeMvModal,
             comments, showComments, closeCommentsModal,
             openSleepTimerModal, closeSleepModal, setSleepTimer, cancelSleepTimer,
-            shareCurrentSong, applyCustomFont, exportSettings,
+            shareCurrentSong, applyCustomFont, restoreDefaultFont, exportSettings,
             showVipModal, hideVipModal, goToNetEase, playSongById,
             userCookie, saveCookie,
             qualityLevel, saveQualityLevel,
