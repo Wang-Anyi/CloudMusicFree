@@ -91,7 +91,6 @@ html { font-size: calc(16px * var(--font-scale, 1)); }
     transition: background-color 0.3s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
-/* ✅ 不在 body 上用 backdrop-filter，避免 fixed 弹窗跟随页面滚动 */
 body {
     min-height: 100vh;
     background: linear-gradient(145deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
@@ -337,31 +336,6 @@ body::before {
     .icon-btn { font-size: 1rem; padding: 6px 12px; }
 }
 
-/* ✅ MV 徽章 */
-.mv-badge-wrap {
-    display: flex;
-    justify-content: center;
-    margin: -4px 0 10px 0;
-}
-.mv-badge {
-    background: linear-gradient(100deg, #d44c2f, #f07c48);
-    color: white;
-    border: none;
-    padding: 5px 14px;
-    border-radius: 20px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(212, 76, 47, 0.45);
-    transition: 0.2s;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    letter-spacing: 0.3px;
-}
-.mv-badge:hover { transform: scale(1.06); box-shadow: 0 4px 14px rgba(212, 76, 47, 0.65); }
-.mv-badge:active { transform: scale(0.98); }
-
 .lyrics-card, .history-card {
     background: rgba(var(--lyrics-card-bg-r), var(--lyrics-card-bg-g), var(--lyrics-card-bg-b), var(--card-opacity));
     backdrop-filter: blur(8px);
@@ -392,7 +366,6 @@ body::before {
     padding: 6px; border-radius: 60px; background: rgba(0,0,0,0.3);
 }
 
-/* ✅ 弹窗系统：所有弹窗始终在视口正中央 */
 .modal {
     position: fixed;
     inset: 0;
@@ -463,7 +436,6 @@ body::before {
 .theme-sunset { background: #fff3e0; color: #bf360c; }
 .theme-btn:hover { transform: scale(1.02); filter: brightness(0.95); }
 
-/* ✅ 全屏播放器：始终居中 */
 .fullscreen-modal {
     position: fixed;
     inset: 0;
@@ -545,7 +517,6 @@ body::before {
     .fullscreen-buttons .icon-btn { font-size: 1rem; }
 }
 
-/* ✅ 设置弹窗 */
 .settings-modal-content {
     max-width: 900px;
     width: 95%;
@@ -631,7 +602,6 @@ body::before {
     position: relative; z-index: 1;
 }
 
-/* ✅ 我的歌单：自适应宽高 + 统一封面 */
 #myPlaylistsModal .modal-content {
     max-width: 920px;
     width: 95%;
