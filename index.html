@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=7" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=7" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=10" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=10" type="image/x-icon">
 
-    <link rel="manifest" href="./manifest.json?v=6">
+    <link rel="manifest" href="./manifest.json?v=9">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=6">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=9">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -264,6 +264,15 @@
                     </div>
 
                     <div>
+                        <div class="settings-title">🔠 字体大小</div>
+                        <div class="settings-desc">范围 80-140%，调整整体文字显示大小</div>
+                        <div class="slider-container">
+                            <input type="range" v-model.number="fontScale" min="80" max="140" step="5" class="settings-slider" @input="saveFontScale">
+                            <span class="slider-value">{{ fontScale }}%</span>
+                        </div>
+                    </div>
+
+                    <div>
                         <div class="settings-title">🪟 主容器透明度</div>
                         <div class="settings-desc">控制最外层大容器的透明度</div>
                         <div class="slider-container">
@@ -348,9 +357,12 @@
 
                     <div class="settings-full">
                         <div class="settings-title">🔤 自定义字体（TTF/OTF）</div>
-                        <div class="settings-desc">上传字体文件，立即应用</div>
+                        <div class="settings-desc">上传字体文件，立即应用并持久保存（刷新后仍生效）</div>
                         <div class="font-upload">
                             <input type="file" accept=".ttf,.otf,.woff,.woff2" @change="applyCustomFont">
+                        </div>
+                        <div class="settings-buttons" style="margin-top: 8px;">
+                            <button class="btn btn-outline" @click="restoreDefaultFont">恢复默认字体</button>
                         </div>
                     </div>
 
