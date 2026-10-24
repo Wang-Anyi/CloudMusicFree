@@ -16,10 +16,15 @@ const extractColorFromImage = (url) => {
         img.src = url;
     });
 };
+// ✅ 修复：有自定义背景图时跳过动态渐变，避免覆盖
 const setDynamicGradient = async (coverUrl) => {
+    if (localStorage.getItem('customBgImage')) return;
     if (!coverUrl || !coverUrl.startsWith('http')) return;
     const color = await extractColorFromImage(coverUrl);
-    if (color) document.body.style.background = `radial-gradient(circle at 10% 20%, ${color}, rgba(0,0,0,0.8))`;
+    if (color) {
+        document.body.style.backgroundImage = 'none';
+        document.body.style.background = `radial-gradient(circle at 10% 20%, ${color}, rgba(0,0,0,0.8))`;
+    }
 };
 
 createApp({
@@ -83,8 +88,14 @@ createApp({
         const blurEnabled = ref(false);
         const bgBlur = ref(0);
         const cardOpacity = ref(100);
+        const containerOpacity = ref(75);
         const maskOpacity = ref(30);
         const glassIntensity = ref(12);
+
+        // ✅ 新增：方向 / 全屏 / 自动全屏
+        const orientationMode = ref(localStorage.getItem('orientationMode') || 'auto');
+        const isFullscreen = ref(false);
+        const autoFullscreenOnEnter = ref(localStorage.getItem('autoFullscreenOnEnter') === 'true');
 
         const userCookie = ref('');
 
@@ -102,7 +113,7 @@ createApp({
         const createdPlaylists = computed(() => myPlaylists.value.filter(p => !p.subscribed));
         const subscribedPlaylists = computed(() => myPlaylists.value.filter(p => p.subscribed));
 
-        // ========== PWA ==========
+        // ========== PWA 安装 ==========
         const deferredInstallPrompt = ref(null);
         const showInstallBtn = ref(false);
         const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -140,6 +151,94 @@ createApp({
                 playErrorMsg.value = '请使用 Chrome/Edge 菜单中的「安装应用」';
                 setTimeout(() => { if (playErrorMsg.value.includes('安装应用')) playErrorMsg.value = ''; }, 3000);
             }
+        };
+
+        // ========== ✅ 全屏 / 方向 ==========
+        const toggleFullscreen = async () => {
+            try {
+                if (document.fullscreenElement) {
+                    await document.exitFullscreen();
+                } else {
+                    await document.documentElement.requestFullscreen();
+                }
+            } catch (e) {
+                playErrorMsg.value = '全屏失败：' + (e.message || e);
+                setTimeout(() => { if (playErrorMsg.value.includes('全屏')) playErrorMsg.value = ''; }, 3000);
+            }
+        };
+
+        const setOrientation = async (mode) => {
+            orientationMode.value = mode;
+            localStorage.setItem('orientationMode', mode);
+            if (mode === 'auto') {
+                try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+                playErrorMsg.value = '✅ 方向已恢复自动';
+                setTimeout(() => { if (playErrorMsg.value.includes('方向')) playErrorMsg.value = ''; }, 2000);
+                return;
+            }
+            try {
+                if (!document.fullscreenElement) {
+                    try {
+                        await document.documentElement.requestFullscreen();
+                    } catch (e) {
+                        playErrorMsg.value = '锁定方向需要先进入全屏，请点击「进入全屏」';
+                        setTimeout(() => { if (playErrorMsg.value.includes('全屏')) playErrorMsg.value = ''; }, 3000);
+                        return;
+                    }
+                }
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock(mode);
+                    playErrorMsg.value = `✅ 已锁定${mode === 'portrait' ? '竖屏' : '横屏'}`;
+                } else {
+                    playErrorMsg.value = '当前浏览器不支持方向锁定';
+                }
+            } catch (e) {
+                playErrorMsg.value = '方向锁定失败：' + (e.message || e);
+            }
+            setTimeout(() => { if (playErrorMsg.value.includes('锁定') || playErrorMsg.value.includes('方向')) playErrorMsg.value = ''; }, 3000);
+        };
+
+        const saveAutoFullscreen = () => {
+            localStorage.setItem('autoFullscreenOnEnter', autoFullscreenOnEnter.value);
+            if (autoFullscreenOnEnter.value) {
+                setupAutoFullscreen();
+                playErrorMsg.value = '✅ 已开启自动全屏，请点击页面任意位置触发';
+            } else {
+                playErrorMsg.value = '✅ 已关闭自动全屏';
+            }
+            setTimeout(() => { if (playErrorMsg.value.includes('全屏')) playErrorMsg.value = ''; }, 2500);
+        };
+
+        let autoFsListeners = [];
+        const setupAutoFullscreen = () => {
+            if (!autoFullscreenOnEnter.value) return;
+            if (document.fullscreenElement) return;
+            const trigger = async () => {
+                try {
+                    if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+                    if (orientationMode.value !== 'auto' && screen.orientation && screen.orientation.lock) {
+                        try { await screen.orientation.lock(orientationMode.value); } catch (e) {}
+                    }
+                } catch (e) {}
+                removeAutoFsListeners();
+            };
+            autoFsListeners.forEach(([evt, fn]) => document.removeEventListener(evt, fn));
+            autoFsListeners = [
+                ['click', trigger],
+                ['touchstart', trigger],
+                ['keydown', trigger]
+            ];
+            autoFsListeners.forEach(([evt, fn]) => document.addEventListener(evt, fn, { once: true, passive: true }));
+        };
+        const removeAutoFsListeners = () => {
+            autoFsListeners.forEach(([evt, fn]) => document.removeEventListener(evt, fn));
+            autoFsListeners = [];
+        };
+
+        const onFullscreenChange = () => {
+            isFullscreen.value = !!document.fullscreenElement;
+            if (document.fullscreenElement) document.body.classList.add('is-fullscreen');
+            else document.body.classList.remove('is-fullscreen');
         };
 
         const API_LIST = [
@@ -206,10 +305,12 @@ createApp({
 
         const openThemeModal = () => { document.getElementById('themeModal').style.display = 'flex'; };
         const closeThemeModal = () => { document.getElementById('themeModal').style.display = 'none'; };
+        // ✅ 修复：切换主题时保留 custom-bg / blur-enabled 标记
         const setTheme = (themeName) => {
             currentTheme.value = themeName;
             localStorage.setItem('appTheme', themeName);
             document.body.className = currentTheme.value;
+            if (bgImageUrl.value && bgImageUrl.value.trim()) document.body.classList.add('custom-bg');
             if (blurEnabled.value) document.body.classList.add('blur-enabled');
             closeThemeModal();
         };
@@ -864,21 +965,38 @@ createApp({
         };
         const fullscreenTogglePlayPause = togglePlayPause;
 
+        // ✅ 修复：只依赖 bgImageUrl，不手动写 body.style
         const bodyBackgroundStyle = computed(() => {
             if (bgImageUrl.value && bgImageUrl.value.trim()) {
-                return { backgroundImage: `url(${bgImageUrl.value})`, backgroundSize: 'cover', backgroundPosition: 'center center', backgroundAttachment: 'fixed', backgroundRepeat: 'no-repeat' };
+                return {
+                    backgroundImage: `url(${bgImageUrl.value})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center center',
+                    backgroundAttachment: 'fixed',
+                    backgroundRepeat: 'no-repeat'
+                };
             }
             return {};
         });
+
         const loadBgSettings = () => {
             const sb = localStorage.getItem('customBgImage');
-            if (sb) { bgImageUrl.value = sb; document.body.classList.add('custom-bg'); document.body.style.backgroundImage = `url(${sb})`; document.body.style.backgroundSize = 'cover'; document.body.style.backgroundPosition = 'center center'; document.body.style.backgroundAttachment = 'fixed'; }
+            if (sb) {
+                bgImageUrl.value = sb;
+                document.body.classList.add('custom-bg');
+            }
             const sbl = localStorage.getItem('blurEnabled');
             if (sbl !== null) { blurEnabled.value = sbl === 'true'; if (blurEnabled.value) document.body.classList.add('blur-enabled'); else document.body.classList.remove('blur-enabled'); }
             const sbb = localStorage.getItem('bgBlur');
             if (sbb !== null) { bgBlur.value = parseInt(sbb); document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`); }
             const sco = localStorage.getItem('cardOpacity');
             if (sco !== null) { cardOpacity.value = parseInt(sco); document.body.style.setProperty('--card-opacity', cardOpacity.value / 100); }
+            // ✅ 读取主容器透明度
+            const sct = localStorage.getItem('containerOpacity');
+            if (sct !== null) {
+                containerOpacity.value = parseInt(sct);
+                document.body.style.setProperty('--container-opacity', containerOpacity.value / 100);
+            }
             const smo = localStorage.getItem('maskOpacity');
             if (smo !== null) { maskOpacity.value = parseInt(smo); document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100); }
             const sg = localStorage.getItem('glassIntensity');
@@ -888,18 +1006,26 @@ createApp({
             const savedCookie = localStorage.getItem('neteaseCookie');
             if (savedCookie) userCookie.value = savedCookie;
         };
+
         const saveBgImage = () => {
             if (!bgImageUrl.value.trim()) { playErrorMsg.value = '请输入图片URL'; return; }
             localStorage.setItem('customBgImage', bgImageUrl.value);
             document.body.classList.add('custom-bg');
-            document.body.style.backgroundImage = `url(${bgImageUrl.value})`;
-            document.body.style.backgroundSize = 'cover'; document.body.style.backgroundPosition = 'center center'; document.body.style.backgroundAttachment = 'fixed';
-            playErrorMsg.value = '✅ 背景已更新'; setTimeout(() => { if (playErrorMsg.value === '✅ 背景已更新') playErrorMsg.value = ''; }, 2000);
+            playErrorMsg.value = '✅ 背景已更新';
+            setTimeout(() => { if (playErrorMsg.value === '✅ 背景已更新') playErrorMsg.value = ''; }, 2000);
         };
-        const resetBgImage = () => { bgImageUrl.value = ''; localStorage.removeItem('customBgImage'); document.body.classList.remove('custom-bg'); document.body.style.backgroundImage = ''; playErrorMsg.value = '✅ 已恢复默认背景'; };
+        const resetBgImage = () => {
+            bgImageUrl.value = '';
+            localStorage.removeItem('customBgImage');
+            document.body.classList.remove('custom-bg');
+            document.body.style.backgroundImage = '';
+            playErrorMsg.value = '✅ 已恢复默认背景';
+            setTimeout(() => { if (playErrorMsg.value.includes('默认背景')) playErrorMsg.value = ''; }, 2000);
+        };
         const saveBlurEnabled = () => { localStorage.setItem('blurEnabled', blurEnabled.value); if (blurEnabled.value) document.body.classList.add('blur-enabled'); else document.body.classList.remove('blur-enabled'); };
         const saveBgBlur = () => { localStorage.setItem('bgBlur', bgBlur.value); document.body.style.setProperty('--bg-blur-amount', `${bgBlur.value / 10}px`); };
         const saveCardOpacity = () => { localStorage.setItem('cardOpacity', cardOpacity.value); document.body.style.setProperty('--card-opacity', cardOpacity.value / 100); };
+        const saveContainerOpacity = () => { localStorage.setItem('containerOpacity', containerOpacity.value); document.body.style.setProperty('--container-opacity', containerOpacity.value / 100); };
         const saveMaskOpacity = () => { localStorage.setItem('maskOpacity', maskOpacity.value); document.body.style.setProperty('--mask-opacity', maskOpacity.value / 100); };
         const saveGlassIntensity = () => { localStorage.setItem('glassIntensity', glassIntensity.value); document.querySelector('.app-container').style.backdropFilter = `blur(${glassIntensity.value}px)`; };
         const saveCookie = () => {
@@ -908,7 +1034,19 @@ createApp({
             setTimeout(() => { if (playErrorMsg.value === '✅ Cookie 已保存') playErrorMsg.value = ''; }, 2000);
         };
         const exportSettings = () => {
-            const s = { theme: currentTheme.value, bgImageUrl: bgImageUrl.value, bgBlur: bgBlur.value, cardOpacity: cardOpacity.value, maskOpacity: maskOpacity.value, glassIntensity: glassIntensity.value, blurEnabled: blurEnabled.value, qualityLevel: qualityLevel.value };
+            const s = {
+                theme: currentTheme.value,
+                bgImageUrl: bgImageUrl.value,
+                bgBlur: bgBlur.value,
+                cardOpacity: cardOpacity.value,
+                containerOpacity: containerOpacity.value,
+                maskOpacity: maskOpacity.value,
+                glassIntensity: glassIntensity.value,
+                blurEnabled: blurEnabled.value,
+                qualityLevel: qualityLevel.value,
+                orientationMode: orientationMode.value,
+                autoFullscreenOnEnter: autoFullscreenOnEnter.value
+            };
             const blob = new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' });
             const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cloudmusic-settings.json'; a.click(); URL.revokeObjectURL(a.href);
             playErrorMsg.value = '✅ 设置已导出'; setTimeout(() => { if (playErrorMsg.value === '✅ 设置已导出') playErrorMsg.value = ''; }, 2000);
@@ -923,10 +1061,17 @@ createApp({
                     if (s.bgImageUrl) { bgImageUrl.value = s.bgImageUrl; saveBgImage(); }
                     if (s.bgBlur !== undefined) { bgBlur.value = s.bgBlur; saveBgBlur(); }
                     if (s.cardOpacity !== undefined) { cardOpacity.value = s.cardOpacity; saveCardOpacity(); }
+                    if (s.containerOpacity !== undefined) { containerOpacity.value = s.containerOpacity; saveContainerOpacity(); }
                     if (s.maskOpacity !== undefined) { maskOpacity.value = s.maskOpacity; saveMaskOpacity(); }
                     if (s.glassIntensity !== undefined) { glassIntensity.value = s.glassIntensity; saveGlassIntensity(); }
                     if (s.blurEnabled !== undefined) { blurEnabled.value = s.blurEnabled; saveBlurEnabled(); }
                     if (s.qualityLevel) { qualityLevel.value = s.qualityLevel; saveQualityLevel(); }
+                    if (s.orientationMode) { orientationMode.value = s.orientationMode; localStorage.setItem('orientationMode', s.orientationMode); }
+                    if (s.autoFullscreenOnEnter !== undefined) {
+                        autoFullscreenOnEnter.value = s.autoFullscreenOnEnter;
+                        localStorage.setItem('autoFullscreenOnEnter', s.autoFullscreenOnEnter);
+                        if (s.autoFullscreenOnEnter) setupAutoFullscreen();
+                    }
                     playErrorMsg.value = '✅ 设置导入成功';
                 } catch (err) { playErrorMsg.value = '❌ 导入失败'; }
                 setTimeout(() => { if (playErrorMsg.value.includes('设置')) playErrorMsg.value = ''; }, 2000);
@@ -1228,11 +1373,14 @@ createApp({
 
         onMounted(() => {
             loadTheme();
+            loadBgSettings(); // ✅ 先读背景，确保刷新后立刻应用
             loadPlaylists();
-            loadBgSettings();
             loadQueueFromLocal();
             initModalEvents();
             window.addEventListener('keydown', handleKeydown);
+            document.addEventListener('fullscreenchange', onFullscreenChange);
+            // ✅ 若已开启自动全屏，进入即准备监听首次交互
+            if (autoFullscreenOnEnter.value) setupAutoFullscreen();
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW注册失败', e));
             }
@@ -1265,8 +1413,8 @@ createApp({
             fullscreenSeek, fullscreenTogglePlayPause,
             playPrev, playNext,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
-            bgImageUrl, blurEnabled, bgBlur, cardOpacity, maskOpacity, glassIntensity, bodyBackgroundStyle,
-            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveMaskOpacity, saveGlassIntensity,
+            bgImageUrl, blurEnabled, bgBlur, cardOpacity, containerOpacity, maskOpacity, glassIntensity, bodyBackgroundStyle,
+            saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveContainerOpacity, saveMaskOpacity, saveGlassIntensity,
             openSettingsModal, closeSettingsModal, openFeedbackModal, closeFeedbackModal,
             queue, playFromQueue, removeFromQueue, clearQueue, toggleLoopMode, loopMode,
             openPlayQueueModal, closePlayQueueModal,
@@ -1281,7 +1429,10 @@ createApp({
             qualityLevel, saveQualityLevel,
             myPlaylists, loadingMyPlaylists, loadMyPlaylists,
             createdPlaylists, subscribedPlaylists, openMyPlaylist, openMyPlaylistsModal, closeMyPlaylistsModal,
-            canInstall, installApp
+            canInstall, installApp,
+            orientationMode, setOrientation,
+            isFullscreen, toggleFullscreen,
+            autoFullscreenOnEnter, saveAutoFullscreen
         };
     }
 }).mount('#app');
