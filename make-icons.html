@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PWA 图标生成器</title>
+<title>PWA 图标生成器（不透明背景）</title>
 <style>
     body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; background: #f9f3e6; color: #2d241e; }
     h1 { color: #d44c2f; }
-    .tip { background: #fff4e0; border-left: 4px solid #d44c2f; padding: 12px 16px; border-radius: 8px; margin: 16px 0; font-size: 0.9rem; }
+    .tip { background: #fff4e0; border-left: 4px solid #d44c2f; padding: 12px 16px; border-radius: 8px; margin: 16px 0; font-size: 0.9rem; line-height: 1.7; }
     #previews { display: flex; gap: 32px; flex-wrap: wrap; margin-top: 24px; }
     #previews > div { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: center; }
     #previews h3 { margin: 0 0 12px; color: #6b4e3a; font-size: 1rem; }
-    #previews img { display: block; margin: 0 auto 12px; border: 1px solid #eee; border-radius: 8px; background: repeating-conic-gradient(#ddd 0% 25%, white 0% 50%) 50% / 16px 16px; }
+    #previews img { display: block; margin: 0 auto 12px; border-radius: 8px; }
     #previews a { display: inline-block; background: #d44c2f; color: white; padding: 8px 20px; border-radius: 40px; text-decoration: none; font-weight: 600; font-size: 0.9rem; }
     #previews a:hover { background: #b83b1f; }
     .error { color: #b13e1a; background: #ffdad2; padding: 16px; border-radius: 12px; }
@@ -20,33 +20,35 @@
 <body>
     <h1>🎨 PWA 图标生成器</h1>
     <div class="tip">
-        本页面会读取 <code>./assets/favicon.ico</code>，在浏览器里生成 <code>icon-192.png</code> 和 <code>icon-512.png</code>。<br>
-        下载后放进 <code>assets/</code> 目录，然后刷新主页面、重新安装 PWA，桌面图标就会和标签页一致。
+        本页面会生成 <strong>不透明背景</strong> 的 <code>icon-192.png</code> 和 <code>icon-512.png</code>。<br>
+        Android 安装 PWA 时，<strong>透明背景的 PNG 会被系统填成黑色</strong>，这就是之前桌面图标黑掉的原因。<br>
+        下载后放进 <code>assets/</code> 目录，然后卸载旧的 PWA、重新安装即可。
     </div>
-    <div id="previews"><p>⏳ 正在读取 favicon.ico...</p></div>
+    <div id="previews"><p>⏳ 正在生成...</p></div>
 
 <script>
 const SIZES = [192, 512];
-const container = document.getElementById('previews');
-const img = new Image();
+const BG_COLOR = '#d44c2f';       // 主题色，不透明
+const ICON_SCALE = 0.78;          // 图标占画布的比例，留出安全区（兼容 maskable）
 
-img.onload = () => {
+const container = document.getElementById('previews');
+
+function generate(size, drawFn) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    // ✅ 关键：先铺满不透明背景，杜绝透明 PNG 被系统填黑
+    ctx.fillStyle = BG_COLOR;
+    ctx.fillRect(0, 0, size, size);
+    drawFn(ctx, size);
+    return canvas.toDataURL('image/png');
+}
+
+function renderAll(drawFn) {
     container.innerHTML = '';
     SIZES.forEach(size => {
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, size, size);
-        // 等比缩放 + 居中，避免 ico 非正方形时变形
-        const ratio = Math.min(size / img.width, size / img.height);
-        const w = img.width * ratio;
-        const h = img.height * ratio;
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        const dataUrl = canvas.toDataURL('image/png');
-
+        const dataUrl = generate(size, drawFn);
         const card = document.createElement('div');
         card.innerHTML = `
             <h3>icon-${size}.png</h3>
@@ -55,13 +57,43 @@ img.onload = () => {
         `;
         container.appendChild(card);
     });
+}
+
+// 优先用本地 favicon.ico，失败则用内置音符 SVG
+const img = new Image();
+img.onload = () => {
+    renderAll((ctx, size) => {
+        const ratio = Math.min(size * ICON_SCALE / img.width, size * ICON_SCALE / img.height);
+        const w = img.width * ratio;
+        const h = img.height * ratio;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+    });
 };
 
 img.onerror = () => {
-    container.innerHTML = '<p class="error">❌ 未找到 <code>./assets/favicon.ico</code>。<br>请确认该文件存在，并且 <code>make-icons.html</code> 与 <code>index.html</code> 在同一目录。</p>';
+    // 兜底：内置白色音符，不依赖任何本地文件
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+        <path fill="#ffffff" d="M60 10 L60 60 a15 15 0 1 1 -10 -14 V25 L35 30 V70 a15 15 0 1 1 -10 -14 V20 Z"/>
+    </svg>`;
+    const fallbackImg = new Image();
+    fallbackImg.onload = () => {
+        renderAll((ctx, size) => {
+            const ratio = Math.min(size * ICON_SCALE / fallbackImg.width, size * ICON_SCALE / fallbackImg.height);
+            const w = fallbackImg.width * ratio;
+            const h = fallbackImg.height * ratio;
+            ctx.drawImage(fallbackImg, (size - w) / 2, (size - h) / 2, w, h);
+        });
+        const note = document.createElement('p');
+        note.className = 'tip';
+        note.innerHTML = '⚠️ 未找到 <code>./assets/favicon.ico</code>，已改用内置音符图标。生成的 PNG 依然可用。';
+        container.parentNode.insertBefore(note, container);
+    };
+    fallbackImg.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
 };
 
-img.src = './assets/favicon.ico';
+img.src = './assets/favicon.ico?v=' + Date.now();
 </script>
 </body>
 </html>
