@@ -167,7 +167,6 @@
         </div>
     </div>
 
-    <!-- 移动端底部迷你播放条（液态玻璃） -->
     <div class="mobile-mini-player"
          v-if="currentSongName"
          @click="openFullscreenPlayer">
@@ -444,10 +443,47 @@
                             <button class="btn btn-outline" @click="saveCookie">保存 Cookie</button>
                         </div>
                     </div>
+
+                    <div class="settings-full">
+                        <div class="settings-title">🐛 调试日志</div>
+                        <div class="settings-desc">遇到 Bug 时点击「导出日志」，填写问题描述后复制或下载，把内容发给开发者即可快速定位问题</div>
+                        <div class="settings-buttons">
+                            <button class="btn btn-primary" @click="openLogExportModal">📋 导出日志</button>
+                            <button class="btn btn-outline" @click="clearLogs">🗑️ 清空日志</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="modal-btn confirm" @click="closeSettingsModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="logExportModal" class="modal" style="display: none;">
+        <div class="modal-content log-export-content">
+            <div class="modal-header">
+                <span>🐛 调试日志</span>
+                <button class="modal-close" id="closeLogExportBtn">&times;</button>
+            </div>
+            <div class="modal-body log-export-body">
+                <div class="settings-title">📝 请描述你遇到的问题</div>
+                <div class="settings-desc">尽量具体，例如「搜索周杰伦后点击播放，一直显示获取播放链接中，音乐不播放」</div>
+                <textarea v-model="bugDescription" rows="3" class="settings-input" placeholder="在这里描述 Bug 现象、复现步骤、发生时间等..."></textarea>
+
+                <div class="settings-title" style="margin-top: 16px;">📋 日志内容（自动附带环境信息）</div>
+                <div class="settings-desc">已包含错误记录、浏览器信息、当前状态，直接复制或下载发给开发者即可</div>
+                <textarea :value="logContent" readonly rows="12" class="settings-input log-textarea"></textarea>
+
+                <div class="settings-buttons" style="margin-top: 12px;">
+                    <button class="btn btn-outline" @click="refreshLogContent">⟳ 刷新日志</button>
+                    <button class="btn btn-primary" @click="copyLogToClipboard">📋 复制到剪贴板</button>
+                    <button class="btn btn-outline" @click="downloadLogFile">⬇️ 下载 .txt</button>
+                </div>
+                <div class="log-hint" v-if="logHint">{{ logHint }}</div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn confirm" @click="closeLogExportModal">关闭</button>
             </div>
         </div>
     </div>
