@@ -1,6 +1,5 @@
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
-/* 透明占位 */
 const DEFAULT_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"></svg>'
 );
@@ -78,6 +77,7 @@ createApp({
         const queue = ref([]);
         let currentQueueIndex = -1;
         let sleepTimerId = null;
+        let activePlayToken = 0;
 
         const fullscreenPlayerVisible = ref(false);
         const fullscreenCover = ref('');
@@ -125,7 +125,6 @@ createApp({
         const isFullscreen = ref(false);
         const autoFullscreenOnEnter = ref(localStorage.getItem('autoFullscreenOnEnter') === 'true');
 
-        /* ✅ 新增：移动端布局状态 */
         const isMobileView = ref(false);
 
         const userCookie = ref('');
@@ -138,6 +137,11 @@ createApp({
 
         const createdPlaylists = computed(() => myPlaylists.value.filter(p => !p.subscribed));
         const subscribedPlaylists = computed(() => myPlaylists.value.filter(p => p.subscribed));
+
+        /* ✅ 调试日志状态 */
+        const bugDescription = ref('');
+        const logContent = ref('');
+        const logHint = ref('');
 
         window.__hasCustomBg = () => !!(bgImageUrl.value && bgImageUrl.value.trim());
 
@@ -180,7 +184,6 @@ createApp({
             }
         };
 
-        /* ✅ 新增：判断是否使用移动端布局 */
         const checkMobileView = () => {
             const w = window.innerWidth;
             const h = window.innerHeight;
@@ -433,11 +436,138 @@ createApp({
             }
         };
         const logError = (error, context) => {
-            const logs = JSON.parse(localStorage.getItem('errorLogs') || '[]');
-            logs.push({ time: new Date().toISOString(), error: error.message || error, context });
-            while (logs.length > 50) logs.shift();
-            localStorage.setItem('errorLogs', JSON.stringify(logs));
+            try {
+                const logs = JSON.parse(localStorage.getItem('errorLogs') || '[]');
+                logs.push({
+                    time: new Date().toISOString(),
+                    error: (error && (error.message || error.toString())) || String(error),
+                    context: context || 'unknown'
+                });
+                while (logs.length > 100) logs.shift();
+                localStorage.setItem('errorLogs', JSON.stringify(logs));
+            } catch (e) {}
             console.error(`[${context}]`, error);
+        };
+
+        /* ============================================================
+           调试日志收集/导出
+           ============================================================ */
+        const collectEnvInfo = () => {
+            const info = {
+                '生成时间': new Date().toLocaleString('zh-CN'),
+                '页面 URL': location.href,
+                'User Agent': navigator.userAgent,
+                '平台': navigator.platform,
+                '语言': navigator.language,
+                '屏幕': `${screen.width}x${screen.height}`,
+                '窗口': `${window.innerWidth}x${window.innerHeight}`,
+                '设备像素比': window.devicePixelRatio,
+                '布局模式': isMobileView.value ? '移动端' : '桌面端',
+                '方向设置': orientationMode.value,
+                '当前主题': currentTheme.value,
+                '是否填写 Cookie': userCookie.value.trim() ? '是' : '否',
+                'Cookie 长度': String(userCookie.value.trim().length),
+                '当前 API 索引': String(currentApiIndex),
+                '当前 API': API_LIST[currentApiIndex] || '(无)',
+                '正在播放': currentSongName.value || '(无)',
+                '当前歌曲 ID': currentSongId || '(无)',
+                '播放状态': isPlaying.value ? '播放中' : '暂停',
+                '队列长度': String(queue.value.length),
+                '搜索结果数': String(searchResults.value.length),
+                'PWA 模式': isStandalone.value ? '是' : '否',
+                '在线状态': navigator.onLine ? '在线' : '离线'
+            };
+            return Object.entries(info).map(([k, v]) => `${k}: ${v}`).join('\n');
+        };
+
+        const buildLogText = () => {
+            let logs = [];
+            try { logs = JSON.parse(localStorage.getItem('errorLogs') || '[]'); } catch (e) {}
+            const envInfo = collectEnvInfo();
+            const desc = (bugDescription.value || '').trim();
+            const parts = [];
+            parts.push('========== 云音匣调试日志 ==========');
+            parts.push('');
+            parts.push('【问题描述】');
+            parts.push(desc || '（用户未填写）');
+            parts.push('');
+            parts.push('【环境信息】');
+            parts.push(envInfo);
+            parts.push('');
+            parts.push('【错误日志】');
+            if (!logs.length) {
+                parts.push('（暂无错误记录）');
+            } else {
+                logs.forEach((log, i) => {
+                    parts.push(`[${i + 1}] ${log.time}`);
+                    parts.push(`  context: ${log.context || '未知'}`);
+                    parts.push(`  error: ${log.error || '未知'}`);
+                    parts.push('');
+                });
+            }
+            parts.push('========== 日志结束 ==========');
+            return parts.join('\n');
+        };
+
+        const refreshLogContent = () => {
+            logContent.value = buildLogText();
+            logHint.value = '✅ 日志已刷新';
+            setTimeout(() => { if (logHint.value.includes('刷新')) logHint.value = ''; }, 2000);
+        };
+
+        const openLogExportModal = () => {
+            bugDescription.value = '';
+            logContent.value = buildLogText();
+            logHint.value = '';
+            document.getElementById('logExportModal').style.display = 'flex';
+        };
+
+        const closeLogExportModal = () => {
+            document.getElementById('logExportModal').style.display = 'none';
+        };
+
+        const copyLogToClipboard = async () => {
+            logHint.value = '';
+            const text = logContent.value || buildLogText();
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                }
+                logHint.value = '✅ 已复制到剪贴板，可直接粘贴发送';
+            } catch (e) {
+                logHint.value = '❌ 复制失败：' + (e.message || '未知错误') + '，请手动长按全选复制';
+            }
+            setTimeout(() => { if (logHint.value.includes('复制')) logHint.value = ''; }, 3000);
+        };
+
+        const downloadLogFile = () => {
+            const text = logContent.value || buildLogText();
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            a.href = url;
+            a.download = `云音匣日志_${ts}.txt`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            logHint.value = '✅ 文件已下载';
+            setTimeout(() => { if (logHint.value.includes('下载')) logHint.value = ''; }, 2000);
+        };
+
+        const clearLogs = () => {
+            if (!confirm('确定要清空所有错误日志吗？')) return;
+            localStorage.removeItem('errorLogs');
+            playErrorMsg.value = '✅ 日志已清空';
+            setTimeout(() => { if (playErrorMsg.value.includes('日志')) playErrorMsg.value = ''; }, 2000);
         };
 
         const applyBgImage = () => {
@@ -829,6 +959,7 @@ createApp({
             if (!songsData) {
                 searchResults.value = [];
                 playErrorMsg.value = '所有搜索接口均不可用';
+                logError('搜索失败：所有 API 均不可用', 'searchSongs');
                 loadingSearch.value = false;
                 return;
             }
@@ -938,10 +1069,13 @@ createApp({
 
         const playSongById = async (songId, songName, artistName, coverUrl, addToQueue = true, queueIndex = -1) => {
             if (!songId) return;
+            const myToken = ++activePlayToken;
             loadingPlay.value = true;
             playErrorMsg.value = '';
             try {
                 const musicUrl = await getSongUrl(songId);
+                if (myToken !== activePlayToken) { loadingPlay.value = false; return; }
+
                 currentSongName.value = songName || '未知歌曲';
                 currentArtist.value = artistName || '网易云音乐';
 
@@ -988,25 +1122,43 @@ createApp({
                     audio.pause();
                     audio.removeAttribute('src');
                     audio.load();
+
                     await new Promise(r => setTimeout(r, 10));
+                    if (myToken !== activePlayToken) { loadingPlay.value = false; return; }
+
                     audio.src = musicUrl;
                     await new Promise(resolve => {
                         const handler = () => { audio.removeEventListener('canplay', handler); resolve(); };
                         audio.addEventListener('canplay', handler, { once: true });
                         setTimeout(resolve, 3000);
                     });
-                    await audio.play();
-                    isPlaying.value = true;
-                    fullscreenIsPlaying.value = true;
+
+                    if (myToken !== activePlayToken) { loadingPlay.value = false; return; }
+
+                    try {
+                        await audio.play();
+                        if (myToken === activePlayToken) {
+                            isPlaying.value = true;
+                            fullscreenIsPlaying.value = true;
+                        }
+                    } catch (e) {
+                        if (e.name !== 'AbortError' && !/interrupted|paused/i.test(e.message)) {
+                            throw e;
+                        }
+                    }
                 }
+
+                if (myToken !== activePlayToken) { loadingPlay.value = false; return; }
                 fetchLyrics(songId);
                 fetchAlbumInfo(songId);
             } catch (err) {
-                console.error('播放错误:', err);
-                playErrorMsg.value = err.message || '网络错误，请重试';
-                logError(err, 'playSongById');
+                if (myToken === activePlayToken) {
+                    console.error('播放错误:', err);
+                    playErrorMsg.value = err.message || '网络错误，请重试';
+                    logError(err, 'playSongById');
+                }
             } finally {
-                loadingPlay.value = false;
+                if (myToken === activePlayToken) loadingPlay.value = false;
             }
         };
 
@@ -1199,6 +1351,7 @@ createApp({
                 setTimeout(() => { if (playErrorMsg.value.includes('下载完成')) playErrorMsg.value = ''; }, 3000);
             } catch (e) {
                 console.error('[下载] 失败:', e);
+                logError(e, 'downloadCurrentSong');
                 playErrorMsg.value = '❌ 下载失败：' + (e.message || '未知错误');
                 setTimeout(() => { if (playErrorMsg.value.includes('下载失败')) playErrorMsg.value = ''; }, 4000);
             } finally {
@@ -1209,8 +1362,21 @@ createApp({
         const togglePlayPause = () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src) return;
-            if (audio.paused) { audio.play(); isPlaying.value = true; fullscreenIsPlaying.value = true; }
-            else { audio.pause(); isPlaying.value = false; fullscreenIsPlaying.value = false; }
+            if (audio.paused) {
+                audio.play().then(() => {
+                    isPlaying.value = true;
+                    fullscreenIsPlaying.value = true;
+                }).catch(e => {
+                    if (e.name !== 'AbortError' && !/interrupted|paused/i.test(e.message)) {
+                        console.warn('播放失败:', e);
+                        logError(e, 'togglePlayPause');
+                    }
+                });
+            } else {
+                audio.pause();
+                isPlaying.value = false;
+                fullscreenIsPlaying.value = false;
+            }
         };
 
         const updateProgress = () => {
@@ -1252,7 +1418,18 @@ createApp({
             fullscreenIsPlaying.value = false;
             if (loopMode.value === 'one') {
                 const a = audioPlayer.value;
-                if (a) { a.currentTime = 0; a.play(); isPlaying.value = true; fullscreenIsPlaying.value = true; }
+                if (a) {
+                    a.currentTime = 0;
+                    a.play().then(() => {
+                        isPlaying.value = true;
+                        fullscreenIsPlaying.value = true;
+                    }).catch(e => {
+                        if (e.name !== 'AbortError' && !/interrupted|paused/i.test(e.message)) {
+                            console.warn('循环播放失败:', e);
+                            logError(e, 'onAudioEnded');
+                        }
+                    });
+                }
                 return;
             }
             playNext(false);
@@ -1262,6 +1439,11 @@ createApp({
             console.error('Audio error:', e);
             playErrorMsg.value = '播放失败，可能是音频链接无效';
             isPlaying.value = false; fullscreenIsPlaying.value = false;
+            try {
+                const audio = audioPlayer.value;
+                const src = audio?.src || '';
+                logError(`audio error code=${audio?.error?.code} message=${audio?.error?.message || '未知'} src=${src.slice(0, 100)}`, 'onAudioError');
+            } catch (er) {}
         };
 
         const openFullscreenPlayer = () => {
@@ -1341,7 +1523,7 @@ createApp({
             const audio = audioPlayer.value;
             if (!audio) return;
             audio.currentTime = time;
-            if (audio.paused) { audio.play(); isPlaying.value = true; fullscreenIsPlaying.value = true; }
+            if (audio.paused) { audio.play().then(() => { isPlaying.value = true; fullscreenIsPlaying.value = true; }).catch(() => {}); }
         };
 
         const saveBgImage = () => {
@@ -1437,6 +1619,7 @@ createApp({
                 event.target.value = '';
             } catch (e) {
                 playErrorMsg.value = '❌ 字体保存失败：' + (e.message || '未知错误');
+                logError(e, 'applyCustomFont');
             }
         };
         const loadCustomFontFromDB = async () => {
@@ -1674,10 +1857,12 @@ createApp({
                 } else {
                     searchResults.value = [];
                     playErrorMsg.value = '❌ 歌单加载失败';
+                    logError(`加载歌单失败: ${plName} (${playlistId})`, 'fetchPlaylistTracks');
                 }
             } catch (e) {
                 searchResults.value = [];
                 playErrorMsg.value = '❌ 歌单接口异常';
+                logError(e, 'fetchPlaylistTracks');
             } finally {
                 loadingSearch.value = false;
             }
@@ -1744,6 +1929,7 @@ createApp({
                 return true;
             } catch (e) {
                 if (autoOpenModal) playErrorMsg.value = e.message || '加载我的歌单失败';
+                logError(e, 'loadMyPlaylists');
                 return false;
             } finally {
                 loadingMyPlaylists.value = false;
@@ -1785,7 +1971,7 @@ createApp({
                 const song = { id: String(detail.id), name: detail.name, artist: (detail.ar || []).map(a => a.name).join('/'), picUrl, isVip };
                 if (isVip && !userCookie.value.trim()) showVipModal(song);
                 else playSongById(song.id, song.name, song.artist, song.picUrl);
-            } catch (err) { playErrorMsg.value = '获取歌曲信息失败，请检查ID'; }
+            } catch (err) { playErrorMsg.value = '获取歌曲信息失败，请检查ID'; logError(err, 'parseById'); }
         };
 
         const openSettingsModal = () => { document.getElementById('settingsModal').style.display = 'flex'; };
@@ -1794,7 +1980,7 @@ createApp({
         const closeFeedbackModal = () => { document.getElementById('feedbackModal').style.display = 'none'; };
 
         const initModalEvents = () => {
-            const modals = ['themeModal', 'settingsModal', 'feedbackModal', 'vipModal', 'sleepTimerModal', 'myPlaylistsModal', 'iosInstallModal'];
+            const modals = ['themeModal', 'settingsModal', 'feedbackModal', 'vipModal', 'sleepTimerModal', 'myPlaylistsModal', 'iosInstallModal', 'logExportModal'];
             modals.forEach(id => {
                 const m = document.getElementById(id);
                 if (m) {
@@ -1816,6 +2002,22 @@ createApp({
             if (iosConfirm) iosConfirm.onclick = () => { document.getElementById('iosInstallModal').style.display = 'none'; };
         };
 
+        /* ✅ 全局错误捕获 → 写入 errorLogs */
+        const onGlobalError = (event) => {
+            try {
+                const msg = event?.error?.message || event?.message || '未知错误';
+                const loc = event?.filename ? ` @ ${event.filename}:${event.lineno}:${event.colno}` : '';
+                logError(msg + loc, 'window.onerror');
+            } catch (e) {}
+        };
+        const onUnhandledRejection = (event) => {
+            try {
+                const reason = event?.reason;
+                const msg = reason?.message || String(reason || '未知 Promise 错误');
+                logError(msg, 'unhandledrejection');
+            } catch (e) {}
+        };
+
         onMounted(() => {
             loadAllSettings();
             loadCustomFontFromDB();
@@ -1826,6 +2028,8 @@ createApp({
             window.addEventListener('resize', checkMobileView);
             document.addEventListener('fullscreenchange', onFullscreenChange);
             window.addEventListener('resize', onWindowResize);
+            window.addEventListener('error', onGlobalError);
+            window.addEventListener('unhandledrejection', onUnhandledRejection);
             if (autoFullscreenOnEnter.value) setupAutoFullscreen();
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW注册失败', e));
@@ -1846,6 +2050,8 @@ createApp({
             window.removeEventListener('resize', onWindowResize);
             window.removeEventListener('resize', checkMobileView);
             document.removeEventListener('fullscreenchange', onFullscreenChange);
+            window.removeEventListener('error', onGlobalError);
+            window.removeEventListener('unhandledrejection', onUnhandledRejection);
             stopKaraokeLoop();
         });
 
@@ -1886,7 +2092,9 @@ createApp({
             orientationMode, setOrientation,
             isFullscreen, toggleFullscreen,
             autoFullscreenOnEnter, saveAutoFullscreen,
-            isMobileView
+            isMobileView,
+            bugDescription, logContent, logHint,
+            openLogExportModal, closeLogExportModal, refreshLogContent, copyLogToClipboard, downloadLogFile, clearLogs
         };
     }
 }).mount('#app');
