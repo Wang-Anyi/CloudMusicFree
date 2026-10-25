@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=16" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=16" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=17" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=17" type="image/x-icon">
 
-    <link rel="manifest" href="./manifest.json?v=15">
+    <link rel="manifest" href="./manifest.json?v=16">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=15">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=16">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -167,7 +167,6 @@
         </div>
     </div>
 
-    <!-- 全屏播放器 -->
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
         <div class="fullscreen-container">
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
@@ -183,7 +182,7 @@
                     <div class="fullscreen-lyrics-scroll" ref="fullscreenLyricsContainer">
                         <div v-if="fullscreenLyrics.length">
                             <div v-for="(line, idx) in fullscreenLyrics" :key="idx"
-                                 :class="['fullscreen-lyric-line', { 'active': fullscreenLyricIndex === idx }]"
+                                 :class="['fullscreen-lyric-line', { 'active': fullscreenLyricIndex === idx, 'karaoke-on': karaokeEnabled }]"
                                  @pointerdown="onLyricPointerDown"
                                  @click="seekToLyric(line.time, $event)">
                                 <div class="lyric-original">{{ line.text }}</div>
@@ -215,7 +214,6 @@
         </div>
     </div>
 
-    <!-- 主题弹窗（14 套预设 + 自定义） -->
     <div id="themeModal" class="modal" style="display: none;">
         <div class="modal-content theme-modal-content">
             <div class="modal-header">
@@ -259,7 +257,6 @@
         </div>
     </div>
 
-    <!-- 设置弹窗 -->
     <div id="settingsModal" class="modal" style="display: none;">
         <div class="modal-content settings-modal-content">
             <div class="modal-header">
@@ -355,6 +352,18 @@
                         </label>
                     </div>
 
+                    <div>
+                        <div class="settings-title">🎤 卡拉OK 渐变效果</div>
+                        <div class="settings-desc">开启后全屏歌词按进度填充颜色（KTV 效果）</div>
+                        <label class="switch-label">
+                            <span class="switch-text">卡拉OK 渐变</span>
+                            <label class="switch">
+                                <input type="checkbox" v-model="karaokeEnabled" @change="saveKaraokeEnabled">
+                                <span class="slider round"></span>
+                            </label>
+                        </label>
+                    </div>
+
                     <div class="settings-full">
                         <div class="settings-title">📱 屏幕方向</div>
                         <div class="settings-desc">需要先进入全屏才能锁定方向，不同浏览器支持程度不同</div>
@@ -418,7 +427,6 @@
         </div>
     </div>
 
-    <!-- 反馈 -->
     <div id="feedbackModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 380px;">
             <div class="modal-header">
@@ -441,7 +449,6 @@
         </div>
     </div>
 
-    <!-- 公告 -->
     <div id="announcementModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 400px;">
             <div class="modal-header">
@@ -460,7 +467,6 @@
         </div>
     </div>
 
-    <!-- VIP -->
     <div id="vipModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -479,7 +485,6 @@
         </div>
     </div>
 
-    <!-- 我的歌单 -->
     <div id="myPlaylistsModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -518,7 +523,6 @@
         </div>
     </div>
 
-    <!-- 睡眠 -->
     <div id="sleepTimerModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 300px;">
             <div class="modal-header">
@@ -539,7 +543,6 @@
         </div>
     </div>
 
-    <!-- iOS 安装 -->
     <div id="iosInstallModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 360px;">
             <div class="modal-header">
