@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
     <title>云音匣 · 网易云免费播放器</title>
 
     <link rel="icon" href="./assets/favicon.ico?v=21" type="image/x-icon">
@@ -165,6 +165,29 @@
         <div class="footer-note">
             🎧 解析优先级：免费外链 → v1音质降级 → 老接口 → 外链兜底 · 下载包含封面/歌词(含翻译)/完整信息
         </div>
+    </div>
+
+    <!-- 移动端底部迷你播放条（液态玻璃） -->
+    <div class="mobile-mini-player"
+         v-if="currentSongName"
+         @click="openFullscreenPlayer">
+        <div class="mini-cover-wrap">
+            <img v-if="currentCover && currentCover.startsWith('http')"
+                 :src="currentCover"
+                 class="mini-cover"
+                 alt="cover"
+                 referrerpolicy="no-referrer-when-downgrade">
+            <div v-else class="mini-cover mini-cover-placeholder">♪</div>
+        </div>
+        <div class="mini-info">
+            <div class="mini-title">{{ currentSongName }}</div>
+            <div class="mini-artist">{{ currentArtist }}</div>
+        </div>
+        <button class="mini-btn" @click.stop="togglePlayPause" :aria-label="isPlaying ? '暂停' : '播放'">
+            <span v-if="isPlaying">⏸</span>
+            <span v-else>▶</span>
+        </button>
+        <button class="mini-btn" @click.stop="userNext" aria-label="下一首">⏭</button>
     </div>
 
     <div id="fullscreenPlayer" class="fullscreen-modal" style="display: none;">
@@ -367,8 +390,8 @@
                     </div>
 
                     <div class="settings-full">
-                        <div class="settings-title">📱 屏幕方向</div>
-                        <div class="settings-desc">需要先进入全屏才能锁定方向，不同浏览器支持程度不同</div>
+                        <div class="settings-title">📱 屏幕方向 / 布局模式</div>
+                        <div class="settings-desc">选「自动」按屏幕宽度切换；选「竖屏」强制移动端布局（Apple Music 风格）；选「横屏」强制桌面端布局</div>
                         <div class="settings-buttons">
                             <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'auto' }" @click="setOrientation('auto')">自动</button>
                             <button class="btn btn-outline" :class="{ 'btn-active': orientationMode === 'portrait' }" @click="setOrientation('portrait')">📱 竖屏</button>
