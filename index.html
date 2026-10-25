@@ -66,7 +66,7 @@
                     </div>
                     <div class="playlist-grid">
                         <div class="playlist-item" v-for="pl in recommendPlaylists" :key="pl.id" @click="fetchPlaylistTracks(pl.id, pl.name)">
-                            <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=pl'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer">
+                            <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=pl'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer-when-downgrade">
                             <div class="pl-name">{{ pl.name }}</div>
                             <div class="pl-count">📀 {{ pl.trackCount || 0 }}首</div>
                         </div>
@@ -82,7 +82,7 @@
                     <div class="song-item" v-for="song in searchResults" :key="song.id" @click="handlePlayClick(song)">
                         <div class="song-info">
                             <div class="cover-wrapper">
-                                <img class="song-cover" :src="song.picUrl" :data-id="song.id" loading="lazy" referrerpolicy="no-referrer" @load="onImageLoad($event)" @error="onImageError($event)" alt="cover">
+                                <img class="song-cover" :src="song.picUrl" :data-id="song.id" loading="lazy" referrerpolicy="no-referrer-when-downgrade" @load="onImageLoad($event)" @error="onImageError($event)" alt="cover">
                                 <div class="cover-loading" v-if="song.loadingCover">📷</div>
                             </div>
                             <div class="song-details">
@@ -110,7 +110,7 @@
                         <button class="fullscreen-btn" @click="openFullscreenPlayer">⛶</button>
                     </div>
                     <div class="now-playing">
-                        <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover" referrerpolicy="no-referrer" @load="onImageLoad($event)">
+                        <img class="cover-large" :src="currentCover || 'https://cdn-icons-png.flaticon.com/512/727/727245.png'" alt="album cover" referrerpolicy="no-referrer-when-downgrade" @load="onImageLoad($event)">
                         <div class="track-artist">{{ currentArtist || '点击歌曲开始聆听' }}</div>
                         <div class="player-controls">
                             <div class="progress-bar-container">
@@ -172,7 +172,7 @@
             <button class="close-fullscreen" @click="closeFullscreenPlayer">✕</button>
             <div class="fullscreen-content">
                 <div class="fullscreen-cover">
-                    <img :src="fullscreenCover" alt="cover" referrerpolicy="no-referrer">
+                    <img :src="fullscreenCover" alt="cover" referrerpolicy="no-referrer-when-downgrade">
                 </div>
                 <div class="fullscreen-lyrics">
                     <div class="fullscreen-lyrics-header">
@@ -501,7 +501,7 @@
                         <div class="settings-title">🎵 我创建的（{{ createdPlaylists.length }}）</div>
                         <div class="my-playlist-grid">
                             <div v-for="pl in createdPlaylists" :key="pl.id" class="playlist-item" @click="openMyPlaylist(pl)">
-                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=my'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer">
+                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=my'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer-when-downgrade">
                                 <div class="pl-name" :title="pl.name">{{ pl.name }}</div>
                                 <div class="pl-count">📀 {{ pl.trackCount || 0 }}首</div>
                             </div>
@@ -511,7 +511,7 @@
                         <div class="settings-title">📚 我收藏的（{{ subscribedPlaylists.length }}）</div>
                         <div class="my-playlist-grid">
                             <div v-for="pl in subscribedPlaylists" :key="pl.id" class="playlist-item" @click="openMyPlaylist(pl)">
-                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=sub'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer">
+                                <img :src="pl.coverImgUrl || 'https://picsum.photos/80/80?random=sub'" class="pl-cover" alt="cover" loading="lazy" referrerpolicy="no-referrer-when-downgrade">
                                 <div class="pl-name" :title="pl.name">{{ pl.name }}</div>
                                 <div class="pl-count">📀 {{ pl.trackCount || 0 }}首</div>
                             </div>
