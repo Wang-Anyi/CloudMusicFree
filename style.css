@@ -1435,3 +1435,49 @@ body.mobile-view.theme-hc-a .modal-header {
 body:not(.mobile-view) .mobile-mini-player {
     display: none !important;
 }
+
+/* ============================================================
+   热门推荐歌单封面：强制 1:1 正方形，加载前后高度不跳变
+   ============================================================ */
+
+/* 1. 让 grid 里的卡片不被拉伸，高度由封面决定 */
+.playlist-grid {
+    align-items: start;
+}
+
+.playlist-grid .playlist-item {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 2. 封面强制正方形：display:block 是关键，否则 aspect-ratio 在 img 上不稳定 */
+.playlist-grid .playlist-item .pl-cover {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    object-position: center;
+    border-radius: 20px;
+    background: var(--border-color);
+    flex-shrink: 0;
+}
+
+/* 3. 移动端横向滚动卡片：宽度固定，封面同样锁 1:1 */
+body.mobile-view .playlist-grid .playlist-item .pl-cover {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    object-position: center;
+}
+
+/* 4. 老浏览器兜底：不支持 aspect-ratio 时，用 padding-bottom 撑正方形 */
+@supports not (aspect-ratio: 1 / 1) {
+    .playlist-grid .playlist-item .pl-cover {
+        height: 0;
+        padding-bottom: 100%;
+        box-sizing: border-box;
+    }
+}
