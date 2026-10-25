@@ -287,23 +287,54 @@ createApp({
             }
         };
 
+        /* ============================================================
+           ✅ API 列表（扩充到 13 个）
+           - 标准 NeteaseCloudMusicApi 实例优先
+           - 你自建的国外 API 放在末尾，国内自动快速跳过
+           ============================================================ */
         const API_LIST = [
-            // ✅ 新增优先尝试（格式兼容）
+            // ✅ 标准实例（国内可访问概率较高）
             'https://netease-cloud-music-api-five-roan-88.vercel.app',
             'https://music-api.heheda.top',
-            // ✅ 原有列表，原样保留
-            'https://meting-api-pi-one.vercel.app',
-            'https://api-enhanced-delta-six.vercel.app',
-            'https://api.liyefeng.top',
             'https://ncm.zhenxin.me',
+            'https://ncme.zhenxin.me',          // 增强版
             'https://zm.i9mr.com',
             'https://music.mcseekeri.com',
             'https://zm.wwoyun.cn',
             'https://api.injahow.cn',
             'https://netease-api.cyan9527.com',
-            'https://music.ghser.com'
+            'https://music.ghser.com',
+            // ✅ 其他社区实例（可能不稳定，作为补充）
+            'https://ncm.landdy.cn',
+            'https://neteaseapi.0721play.icu',
+            // ⬇️ 你自建的国外 API（请替换成真实地址）
+            // 国内访问会超时，冷却机制会自动跳过，不影响体验
+            'https://meting-api-pi-one.vercel.app',
+            'https://api-enhanced-delta-six.vercel.app',
         ];
         let currentApiIndex = 0;
+
+        /* ✅ API 冷却机制（失败一次后 5 分钟内跳过） */
+        const API_COOLDOWN_MS = 5 * 60 * 1000;
+        const apiCooldown = new Map();
+
+        const isApiAvailable = (apiBase) => {
+            const until = apiCooldown.get(apiBase);
+            if (!until) return true;
+            if (Date.now() > until) {
+                apiCooldown.delete(apiBase);
+                return true;
+            }
+            return false;
+        };
+
+        const markApiFailed = (apiBase) => {
+            apiCooldown.set(apiBase, Date.now() + API_COOLDOWN_MS);
+        };
+
+        const markApiOk = (apiBase) => {
+            if (apiCooldown.has(apiBase)) apiCooldown.delete(apiBase);
+        };
 
         const formatDuration = (ms) => {
             if (!ms) return '00:00';
@@ -346,7 +377,7 @@ createApp({
                 const tasks = [];
 
                 tasks.push(
-                    axios.get(`https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`, { timeout: 0 })
+                    axios.get(`https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`, { timeout: 6000 })
                         .then(r => {
                             const s = r.data?.songs?.[0];
                             return s?.album?.picUrl || s?.album?.blurPicUrl || '';
@@ -356,8 +387,9 @@ createApp({
 
                 for (let i = 0; i < Math.min(4, API_LIST.length); i++) {
                     const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                    if (!isApiAvailable(apiBase)) continue;
                     tasks.push(
-                        axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 0 })
+                        axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 6000 })
                             .then(r => {
                                 const s = r.data?.songs?.[0] || r.data?.data?.[0];
                                 return s?.al?.picUrl || s?.album?.picUrl || '';
@@ -891,18 +923,24 @@ createApp({
             return `${apiBase}${path}${sep}cookie=${encodeURIComponent(userCookie.value)}`;
         };
 
+        /* ✅ 带冷却机制的请求降级 */
         const requestWithFallback = async (urlPath, options = {}) => {
             const maxRetries = API_LIST.length;
             let lastError = null;
             for (let i = 0; i < maxRetries; i++) {
                 const apiIndex = (currentApiIndex + i) % maxRetries;
                 const apiBase = API_LIST[apiIndex];
+                if (!isApiAvailable(apiBase)) continue;
                 const fullUrl = buildApiUrl(apiBase, urlPath);
                 try {
-                    const response = await axios.get(fullUrl, { timeout: options.timeout || 15000, ...options });
+                    const response = await axios.get(fullUrl, { timeout: options.timeout || 8000, ...options });
                     currentApiIndex = apiIndex;
+                    markApiOk(apiBase);
                     return response;
-                } catch (err) { lastError = err; }
+                } catch (err) {
+                    markApiFailed(apiBase);
+                    lastError = err;
+                }
             }
             throw lastError || new Error('所有 API 均不可用');
         };
@@ -948,6 +986,7 @@ createApp({
             let songsData = null;
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[i];
+                if (!isApiAvailable(apiBase)) continue;
                 try {
                     const url = buildApiUrl(apiBase, `/search?keywords=${encodeURIComponent(keyword)}&limit=30`);
                     const res = await axios.get(url, { timeout: 8000 });
@@ -955,9 +994,12 @@ createApp({
                     if (songs && songs.length) {
                         songsData = songs;
                         currentApiIndex = i;
+                        markApiOk(apiBase);
                         break;
                     }
-                } catch (e) {}
+                } catch (e) {
+                    markApiFailed(apiBase);
+                }
             }
 
             if (!songsData) {
@@ -1022,13 +1064,20 @@ createApp({
             if (start > 0) levels.splice(0, start);
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                if (!isApiAvailable(apiBase)) continue;
                 for (const lv of levels) {
                     try {
                         const url = buildApiUrl(apiBase, `/song/url/v1?id=${songId}&level=${lv}`);
                         const res = await axios.get(url, { timeout: 15000 });
                         const musicUrl = (res.data?.data || [])[0]?.url;
-                        if (musicUrl) { currentApiIndex = (currentApiIndex + i) % API_LIST.length; return toHttps(musicUrl); }
-                    } catch (e) {}
+                        if (musicUrl) {
+                            currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                            markApiOk(apiBase);
+                            return toHttps(musicUrl);
+                        }
+                    } catch (e) {
+                        markApiFailed(apiBase);
+                    }
                 }
             }
             return null;
@@ -1036,12 +1085,19 @@ createApp({
         const getSongUrlLegacy = async (songId) => {
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                if (!isApiAvailable(apiBase)) continue;
                 try {
                     const url = buildApiUrl(apiBase, `/song/url?id=${songId}`);
                     const res = await axios.get(url, { timeout: 20000 });
                     const musicUrl = res.data?.data?.[0]?.url || res.data?.url || (typeof res.data === 'string' ? res.data : null);
-                    if (musicUrl) { currentApiIndex = (currentApiIndex + i) % API_LIST.length; return toHttps(musicUrl); }
-                } catch (err) {}
+                    if (musicUrl) {
+                        currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                        markApiOk(apiBase);
+                        return toHttps(musicUrl);
+                    }
+                } catch (err) {
+                    markApiFailed(apiBase);
+                }
             }
             return null;
         };
@@ -1057,6 +1113,7 @@ createApp({
         const getSongDetail = async (songId) => {
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                if (!isApiAvailable(apiBase)) continue;
                 try {
                     const url = buildApiUrl(apiBase, `/song/detail?ids=${songId}`);
                     const res = await axios.get(url, { timeout: 8000 });
@@ -1065,8 +1122,13 @@ createApp({
                         res.data?.data?.[0] ||
                         res.data?.result?.songs?.[0] ||
                         (Array.isArray(res.data) ? res.data[0] : null);
-                    if (detail) return detail;
-                } catch (err) {}
+                    if (detail) {
+                        markApiOk(apiBase);
+                        return detail;
+                    }
+                } catch (err) {
+                    markApiFailed(apiBase);
+                }
             }
             throw new Error('无法获取歌曲详情');
         };
@@ -1761,13 +1823,17 @@ createApp({
             const tryRequest = async (path) => {
                 for (let i = 0; i < API_LIST.length; i++) {
                     const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                    if (!isApiAvailable(apiBase)) continue;
                     try {
                         const res = await axios.get(`${apiBase}${path}${cookieParam}`, { timeout: 20000 });
                         if (res && res.data) {
                             currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                            markApiOk(apiBase);
                             return res.data;
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        markApiFailed(apiBase);
+                    }
                 }
                 return null;
             };
@@ -1821,14 +1887,18 @@ createApp({
                         const idsParam = '[' + batch.join(',') + ']';
                         for (let j = 0; j < API_LIST.length; j++) {
                             const apiBase = API_LIST[(currentApiIndex + j) % API_LIST.length];
+                            if (!isApiAvailable(apiBase)) continue;
                             try {
                                 const res = await axios.get(`${apiBase}/song/detail?ids=${encodeURIComponent(idsParam)}${cookieParam}`, { timeout: 20000 });
                                 if (res.data && res.data.songs && res.data.songs.length) {
                                     collected.push(...res.data.songs);
                                     currentApiIndex = (currentApiIndex + j) % API_LIST.length;
+                                    markApiOk(apiBase);
                                     break;
                                 }
-                            } catch (e) {}
+                            } catch (e) {
+                                markApiFailed(apiBase);
+                            }
                         }
                         playErrorMsg.value = `⏳ 已加载 ${collected.length}/${trackIds.length} 首...`;
                     }
@@ -1885,13 +1955,20 @@ createApp({
             if (cachedUid) return cachedUid;
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                if (!isApiAvailable(apiBase)) continue;
                 try {
                     let url = `${apiBase}/user/account/get`;
                     if (userCookie.value.trim()) url += `?cookie=${encodeURIComponent(userCookie.value)}`;
                     const res = await axios.get(url, { timeout: 10000 });
                     const uid = res.data?.account?.id || res.data?.profile?.userId;
-                    if (uid) { cachedUid = uid; return uid; }
-                } catch (e) {}
+                    if (uid) {
+                        cachedUid = uid;
+                        markApiOk(apiBase);
+                        return uid;
+                    }
+                } catch (e) {
+                    markApiFailed(apiBase);
+                }
             }
             return null;
         };
@@ -1912,13 +1989,20 @@ createApp({
                 let list = null;
                 for (let i = 0; i < API_LIST.length; i++) {
                     const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                    if (!isApiAvailable(apiBase)) continue;
                     try {
                         let url = `${apiBase}/user/playlist?uid=${uid}&limit=1000&offset=0`;
                         if (userCookie.value.trim()) url += `&cookie=${encodeURIComponent(userCookie.value)}`;
                         const res = await axios.get(url, { timeout: 15000 });
                         const arr = res.data?.playlist || [];
-                        if (arr.length) { list = arr; break; }
-                    } catch (e) {}
+                        if (arr.length) {
+                            list = arr;
+                            markApiOk(apiBase);
+                            break;
+                        }
+                    } catch (e) {
+                        markApiFailed(apiBase);
+                    }
                 }
                 if (!list) throw new Error('所有 API 均无法获取歌单');
                 myPlaylists.value = list.map(pl => ({
