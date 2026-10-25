@@ -138,7 +138,6 @@ createApp({
         const createdPlaylists = computed(() => myPlaylists.value.filter(p => !p.subscribed));
         const subscribedPlaylists = computed(() => myPlaylists.value.filter(p => p.subscribed));
 
-        /* ✅ 调试日志状态 */
         const bugDescription = ref('');
         const logContent = ref('');
         const logHint = ref('');
@@ -287,34 +286,34 @@ createApp({
             }
         };
 
-        /* ============================================================
-           ✅ API 列表（扩充到 13 个）
-           - 标准 NeteaseCloudMusicApi 实例优先
-           - 你自建的国外 API 放在末尾，国内自动快速跳过
-           ============================================================ */
         const API_LIST = [
-            // ✅ 标准实例（国内可访问概率较高）
             'https://netease-cloud-music-api-five-roan-88.vercel.app',
             'https://music-api.heheda.top',
             'https://ncm.zhenxin.me',
-            'https://ncme.zhenxin.me',          // 增强版
+            'https://ncme.zhenxin.me',
             'https://zm.i9mr.com',
             'https://music.mcseekeri.com',
             'https://zm.wwoyun.cn',
             'https://api.injahow.cn',
             'https://netease-api.cyan9527.com',
             'https://music.ghser.com',
-            // ✅ 其他社区实例（可能不稳定，作为补充）
             'https://ncm.landdy.cn',
             'https://neteaseapi.0721play.icu',
-            // ⬇️ 你自建的国外 API（请替换成真实地址）
-            // 国内访问会超时，冷却机制会自动跳过，不影响体验
-            'https://meting-api-pi-one.vercel.app',
-            'https://api-enhanced-delta-six.vercel.app',
+            // ⬇️ 自建 API（仅国外可用），国内自动冷却跳过
+            // 'https://你的自建API1',
+            // 'https://你的自建API2',
         ];
+
+        const VIP_API_LIST = [
+            'https://netease-cloud-music-api-five-roan-88.vercel.app',
+            'https://music-api.heheda.top',
+            'https://ncm.zhenxin.me',
+            // 自建 API 如果确认支持 VIP，可加到这里
+            // 'https://你的自建API',
+        ];
+
         let currentApiIndex = 0;
 
-        /* ✅ API 冷却机制（失败一次后 5 分钟内跳过） */
         const API_COOLDOWN_MS = 5 * 60 * 1000;
         const apiCooldown = new Map();
 
@@ -464,10 +463,10 @@ createApp({
             const m3 = input.match(/\/my\/m\/music\/playlist\?id=(\d+)/); if (m3) return m3[1];
             return null;
         };
-        const addToHistory = (id, name, artist, cover) => {
+        const addToHistory = (id, name, artist, cover, isVip = false) => {
             const existing = playHistory.value.find(item => item.id === id);
             if (!existing) {
-                playHistory.value.unshift({ id, name, artist, cover: toHttps(cover) });
+                playHistory.value.unshift({ id, name, artist, cover: toHttps(cover), isVip });
                 if (playHistory.value.length > 8) playHistory.value.pop();
             }
         };
@@ -485,9 +484,6 @@ createApp({
             console.error(`[${context}]`, error);
         };
 
-        /* ============================================================
-           调试日志收集/导出
-           ============================================================ */
         const collectEnvInfo = () => {
             const info = {
                 '生成时间': new Date().toLocaleString('zh-CN'),
@@ -507,6 +503,7 @@ createApp({
                 '当前 API': API_LIST[currentApiIndex] || '(无)',
                 '正在播放': currentSongName.value || '(无)',
                 '当前歌曲 ID': currentSongId || '(无)',
+                '当前是否 VIP 歌曲': currentIsVip.value ? '是' : '否',
                 '播放状态': isPlaying.value ? '播放中' : '暂停',
                 '队列长度': String(queue.value.length),
                 '搜索结果数': String(searchResults.value.length),
@@ -923,7 +920,6 @@ createApp({
             return `${apiBase}${path}${sep}cookie=${encodeURIComponent(userCookie.value)}`;
         };
 
-        /* ✅ 带冷却机制的请求降级 */
         const requestWithFallback = async (urlPath, options = {}) => {
             const maxRetries = API_LIST.length;
             let lastError = null;
@@ -1058,6 +1054,7 @@ createApp({
             outerUrlCache.set(key, p);
             return p;
         };
+
         const getSongUrlV1 = async (songId) => {
             const levels = [...QUALITY_LEVELS];
             const start = levels.indexOf(qualityLevel.value);
@@ -1082,6 +1079,38 @@ createApp({
             }
             return null;
         };
+
+        const getSongUrlV1ForVip = async (songId) => {
+            const levels = [...QUALITY_LEVELS];
+            const start = levels.indexOf(qualityLevel.value);
+            if (start > 0) levels.splice(0, start);
+
+            for (const apiBase of VIP_API_LIST) {
+                if (!isApiAvailable(apiBase)) continue;
+                for (const lv of levels) {
+                    try {
+                        const url = buildApiUrl(apiBase, `/song/url/v1?id=${songId}&level=${lv}`);
+                        const res = await axios.get(url, { timeout: 12000 });
+                        const item = (res.data?.data || [])[0];
+                        const musicUrl = item?.url;
+                        if (!musicUrl) continue;
+
+                        const trial = item.freeTrialInfo;
+                        const isTrial = !!(trial && typeof trial === 'object' && (trial.start !== undefined || trial.end !== undefined));
+
+                        if (!isTrial) {
+                            markApiOk(apiBase);
+                            return toHttps(musicUrl);
+                        }
+                        markApiFailed(apiBase);
+                    } catch (e) {
+                        markApiFailed(apiBase);
+                    }
+                }
+            }
+            return null;
+        };
+
         const getSongUrlLegacy = async (songId) => {
             for (let i = 0; i < API_LIST.length; i++) {
                 const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
@@ -1101,8 +1130,23 @@ createApp({
             }
             return null;
         };
-        const getSongUrl = async (songId) => {
+
+        const getSongUrl = async (songId, isVip = false) => {
             let url;
+
+            if (isVip) {
+                url = await getSongUrlV1ForVip(songId);
+                if (url) return url;
+
+                url = await getSongUrlV1(songId);
+                if (url) {
+                    playErrorMsg.value = '⚠️ VIP 解析失败，可能只播放试听片段';
+                    setTimeout(() => { if (playErrorMsg.value.includes('VIP')) playErrorMsg.value = ''; }, 4000);
+                    return url;
+                }
+                throw new Error('VIP歌曲解析失败，请确认 Cookie 有效且 VIP API 可用');
+            }
+
             url = await probeOuterUrl(songId); if (url) return url;
             url = await getSongUrlV1(songId); if (url) return url;
             url = await getSongUrlLegacy(songId); if (url) return url;
@@ -1133,13 +1177,13 @@ createApp({
             throw new Error('无法获取歌曲详情');
         };
 
-        const playSongById = async (songId, songName, artistName, coverUrl, addToQueue = true, queueIndex = -1) => {
+        const playSongById = async (songId, songName, artistName, coverUrl, addToQueue = true, queueIndex = -1, isVip = false) => {
             if (!songId) return;
             const myToken = ++activePlayToken;
             loadingPlay.value = true;
             playErrorMsg.value = '';
             try {
-                const musicUrl = await getSongUrl(songId);
+                const musicUrl = await getSongUrl(songId, isVip);
                 if (myToken !== activePlayToken) { loadingPlay.value = false; return; }
 
                 currentSongName.value = songName || '未知歌曲';
@@ -1150,19 +1194,21 @@ createApp({
                     initialCover = coverUrl;
                 }
                 currentCover.value = initialCover;
-                currentIsVip.value = false;
+                currentIsVip.value = !!isVip;
                 currentSongId = songId;
                 currentSongArtist = currentArtist.value;
                 currentAlbum.value = '';
                 currentLrcRaw.value = '';
                 currentTLrcRaw.value = '';
-                addToHistory(songId, songName, currentArtist.value, currentCover.value);
+                addToHistory(songId, songName, currentArtist.value, currentCover.value, !!isVip);
+
                 if (addToQueue) {
                     const existing = queue.value.find(s => s.id === songId);
                     if (!existing) {
-                        queue.value.push({ id: songId, name: songName, artist: artistName, picUrl: currentCover.value });
+                        queue.value.push({ id: songId, name: songName, artist: artistName, picUrl: currentCover.value, isVip: !!isVip });
                         currentQueueIndex = queue.value.length - 1;
                     } else {
+                        existing.isVip = !!isVip;
                         currentQueueIndex = queue.value.findIndex(s => s.id === songId);
                     }
                 } else if (queueIndex >= 0) {
@@ -1245,7 +1291,7 @@ createApp({
             let i = currentQueueIndex - 1;
             if (i < 0) i = total - 1;
             const song = queue.value[i];
-            playSongById(song.id, song.name, song.artist, song.picUrl, false, i);
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, i, !!song.isVip);
         };
 
         const playNext = (manual = false) => {
@@ -1272,14 +1318,14 @@ createApp({
                 const pickIdx = pool[Math.floor(Math.random() * pool.length)];
                 shufflePlayed.add(pickIdx);
                 const song = queue.value[pickIdx];
-                playSongById(song.id, song.name, song.artist, song.picUrl, false, pickIdx);
+                playSongById(song.id, song.name, song.artist, song.picUrl, false, pickIdx, !!song.isVip);
                 return;
             }
 
             let i = currentQueueIndex + 1;
             if (i >= total) i = 0;
             const song = queue.value[i];
-            playSongById(song.id, song.name, song.artist, song.picUrl, false, i);
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, i, !!song.isVip);
         };
 
         const userNext = () => playNext(true);
@@ -1922,7 +1968,7 @@ createApp({
                     searchResults.value = songList;
                     playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
                     if (isCustom) {
-                        queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl }));
+                        queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl, isVip: s.isVip }));
                         currentQueueIndex = -1;
                         playErrorMsg.value += ' · 已加入播放队列';
                     }
@@ -2047,7 +2093,7 @@ createApp({
 
         const handlePlayClick = (song) => {
             if (song.isVip && !userCookie.value.trim()) showVipModal(song);
-            else playSongById(song.id, song.name, song.artist, song.picUrl);
+            else playSongById(song.id, song.name, song.artist, song.picUrl, true, -1, !!song.isVip);
         };
         const parseById = async () => {
             const id = extractSongId(songIdInput.value);
@@ -2058,7 +2104,7 @@ createApp({
                 const picUrl = DEFAULT_COVER;
                 const song = { id: String(detail.id), name: detail.name, artist: (detail.ar || []).map(a => a.name).join('/'), picUrl, isVip };
                 if (isVip && !userCookie.value.trim()) showVipModal(song);
-                else playSongById(song.id, song.name, song.artist, song.picUrl);
+                else playSongById(song.id, song.name, song.artist, song.picUrl, true, -1, isVip);
             } catch (err) { playErrorMsg.value = '获取歌曲信息失败，请检查ID'; logError(err, 'parseById'); }
         };
 
@@ -2090,7 +2136,6 @@ createApp({
             if (iosConfirm) iosConfirm.onclick = () => { document.getElementById('iosInstallModal').style.display = 'none'; };
         };
 
-        /* ✅ 全局错误捕获 → 写入 errorLogs */
         const onGlobalError = (event) => {
             try {
                 const msg = event?.error?.message || event?.message || '未知错误';
