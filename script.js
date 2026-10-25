@@ -1089,14 +1089,10 @@ createApp({
         };
 
         const getSongUrlV1ForVip = async (songId) => {
-            // 第一步：VIP 专用列表，要求完整版
             const vip = await _getSongUrlV1FromList(songId, VIP_API_LIST, true);
             if (vip) return vip;
-
-            // 第二步：通用列表，不强制完整版（可能拿到完整版，也可能是试听）
             const general = await _getSongUrlV1FromList(songId, API_LIST, false);
             if (general) return general;
-
             return null;
         };
 
@@ -1137,7 +1133,6 @@ createApp({
                     return result.url;
                 }
 
-                // 所有 API 都失败，最后用外链（必为试听）
                 url = await probeOuterUrl(songId, true);
                 if (url) {
                     playErrorMsg.value = '⚠️ VIP 解析失败，正在播放试听片段';
@@ -1147,7 +1142,6 @@ createApp({
                 throw new Error('VIP歌曲解析失败，请确认 Cookie 有效');
             }
 
-            // 免费：原降级链
             url = await probeOuterUrl(songId); if (url) return url;
             const v1 = await getSongUrlV1(songId); if (v1) return v1.url;
             url = await getSongUrlLegacy(songId); if (url) return url;
@@ -1693,15 +1687,54 @@ createApp({
             setTimeout(() => { if (playErrorMsg.value.includes('卡拉OK')) playErrorMsg.value = ''; }, 2000);
         };
 
+        /* ============================================================
+           自定义字体持久化：原生 IndexedDB（不再依赖 idb 库）
+           ============================================================ */
         const FONT_DB_NAME = 'cloudmusic-db';
         const FONT_STORE = 'fonts';
         const FONT_KEY = 'custom-font';
+        const FONT_DB_VERSION = 1;
+
         const openFontDB = () => {
-            if (!window.idb || !window.idb.openDB) return Promise.reject(new Error('idb 库未加载'));
-            return window.idb.openDB(FONT_DB_NAME, 1, {
-                upgrade(db) { if (!db.objectStoreNames.contains(FONT_STORE)) db.createObjectStore(FONT_STORE); }
+            return new Promise((resolve, reject) => {
+                if (!window.indexedDB) {
+                    reject(new Error('当前浏览器不支持 IndexedDB'));
+                    return;
+                }
+                const req = indexedDB.open(FONT_DB_NAME, FONT_DB_VERSION);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(FONT_STORE)) {
+                        db.createObjectStore(FONT_STORE);
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error || new Error('打开数据库失败'));
+                req.onblocked = () => reject(new Error('数据库被其他标签页占用，请关闭其他页面后重试'));
             });
         };
+
+        const idbPut = (db, store, value, key) => new Promise((resolve, reject) => {
+            const tx = db.transaction(store, 'readwrite');
+            const req = tx.objectStore(store).put(value, key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error || new Error('写入失败'));
+        });
+
+        const idbGet = (db, store, key) => new Promise((resolve, reject) => {
+            const tx = db.transaction(store, 'readonly');
+            const req = tx.objectStore(store).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error || new Error('读取失败'));
+        });
+
+        const idbDelete = (db, store, key) => new Promise((resolve, reject) => {
+            const tx = db.transaction(store, 'readwrite');
+            const req = tx.objectStore(store).delete(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error || new Error('删除失败'));
+        });
+
         const applyFontFromData = (arrayBuffer, fileName, mime) => {
             const oldStyle = document.getElementById('custom-font-style');
             if (oldStyle) oldStyle.remove();
@@ -1724,9 +1757,14 @@ createApp({
                 const mimeMap = { ttf: 'font/ttf', otf: 'font/otf', woff: 'font/woff', woff2: 'font/woff2' };
                 const mime = mimeMap[ext] || 'font/ttf';
                 applyFontFromData(arrayBuffer, file.name, mime);
+
                 const db = await openFontDB();
-                await db.put(FONT_STORE, { data: arrayBuffer, name: file.name, mime, ts: Date.now() }, FONT_KEY);
-                db.close();
+                try {
+                    await idbPut(db, FONT_STORE, { data: arrayBuffer, name: file.name, mime, ts: Date.now() }, FONT_KEY);
+                } finally {
+                    db.close();
+                }
+
                 playErrorMsg.value = '✅ 字体已应用并保存';
                 setTimeout(() => { if (playErrorMsg.value.includes('字体')) playErrorMsg.value = ''; }, 2500);
                 event.target.value = '';
@@ -1738,8 +1776,12 @@ createApp({
         const loadCustomFontFromDB = async () => {
             try {
                 const db = await openFontDB();
-                const fontData = await db.get(FONT_STORE, FONT_KEY);
-                db.close();
+                let fontData = null;
+                try {
+                    fontData = await idbGet(db, FONT_STORE, FONT_KEY);
+                } finally {
+                    db.close();
+                }
                 if (fontData && fontData.data) applyFontFromData(fontData.data, fontData.name, fontData.mime);
             } catch (e) {}
         };
@@ -1749,8 +1791,11 @@ createApp({
                 if (style) style.remove();
                 if (window.__customFontUrl) { try { URL.revokeObjectURL(window.__customFontUrl); } catch (e) {} window.__customFontUrl = null; }
                 const db = await openFontDB();
-                await db.delete(FONT_STORE, FONT_KEY);
-                db.close();
+                try {
+                    await idbDelete(db, FONT_STORE, FONT_KEY);
+                } finally {
+                    db.close();
+                }
                 playErrorMsg.value = '✅ 已恢复默认字体';
                 setTimeout(() => { if (playErrorMsg.value.includes('字体')) playErrorMsg.value = ''; }, 2500);
             } catch (e) { playErrorMsg.value = '❌ 恢复默认字体失败'; }
