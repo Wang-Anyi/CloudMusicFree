@@ -152,7 +152,7 @@
                 <div class="history-card">
                     <div class="section-title">🕘 最近播放</div>
                     <div class="history-list" v-if="playHistory.length">
-                        <div v-for="(item, idx) in playHistory" :key="idx" class="history-item" @click="playSongById(item.id, item.name, item.artist, item.cover)">
+                        <div v-for="(item, idx) in playHistory" :key="idx" class="history-item" @click="playSongById(item.id, item.name, item.artist, item.cover, true, -1, !!item.isVip)">
                             <span>{{ idx+1 }}.</span>
                             <span class="history-name">{{ item.name }}</span>
                             <span class="history-artist">{{ item.artist }}</span>
@@ -163,7 +163,7 @@
             </div>
         </div>
         <div class="footer-note">
-            🎧 解析优先级：免费外链 → v1音质降级 → 老接口 → 外链兜底 · 下载包含封面/歌词(含翻译)/完整信息
+            🎧 解析优先级：免费外链 → v1音质降级 → 老接口 → 外链兜底 · VIP歌曲走专用通道 · 下载包含封面/歌词(含翻译)/完整信息
         </div>
     </div>
 
