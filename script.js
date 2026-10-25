@@ -1,6 +1,5 @@
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
-/* ========== 动态渐变背景 ========== */
 const gradientColorCache = new Map();
 
 const extractColorFromImage = (url) => {
@@ -36,7 +35,6 @@ const setDynamicGradient = async (coverUrl) => {
 
 createApp({
     setup() {
-        /* ========== 响应式数据 ========== */
         const searchKeyword = ref('');
         const songIdInput = ref('');
         const playlistUrlInput = ref('');
@@ -98,7 +96,8 @@ createApp({
         const glassIntensity = ref(12);
         const fontScale = ref(parseInt(localStorage.getItem('fontScale') || '100'));
 
-        const karaokeEnabled = ref(localStorage.getItem('karaokeEnabled') !== 'false');
+        /* ✅ 卡拉OK 默认关闭：仅当 localStorage 明确为 'true' 时才开启 */
+        const karaokeEnabled = ref(localStorage.getItem('karaokeEnabled') === 'true');
 
         const customAccent = ref(localStorage.getItem('customAccent') || '#d44c2f');
         const customBgStart = ref(localStorage.getItem('customBgStart') || '#f9f3e6');
@@ -427,8 +426,9 @@ createApp({
             const cbe = localStorage.getItem('customBgEnd');
             if (cbe) customBgEnd.value = cbe;
 
+            /* ✅ 卡拉OK：仅当明确为 'true' 时开启，默认关闭 */
             const sk = localStorage.getItem('karaokeEnabled');
-            if (sk !== null) karaokeEnabled.value = sk !== 'false';
+            if (sk !== null) karaokeEnabled.value = sk === 'true';
 
             if (currentTheme.value === 'theme-custom') applyCustomColors();
         };
@@ -605,8 +605,7 @@ createApp({
         };
 
         /* ============================================================
-           ✅ 卡拉OK：rAF 循环，进度 = (当前时间 - 当前行开始) / (下一行开始 - 当前行开始)
-           间隔 1s 就 1s 走完，间隔 5s 就 5s 走完，每帧更新，极度流畅
+           ✅ 卡拉OK：rAF 循环，按行间隔自然推进
            ============================================================ */
         let karaokeRafId = null;
 
@@ -685,67 +684,79 @@ createApp({
         };
 
         /* ============================================================
-           ✅ 独立图片加载链路（并发 3，竞速 3 个 API，3s 超时）
+           ✅ 独立图片链路：优先 /album，兜底 /song/detail
            ============================================================ */
         const imageQueue = [];
         let activeImageTasks = 0;
         const MAX_IMAGE_CONCURRENCY = 3;
 
-        const enqueueImageLoad = (songId) => {
-            imageQueue.push(songId);
+        const enqueueImageLoad = (songId, albumId) => {
+            imageQueue.push({ songId, albumId });
             processImageQueue();
         };
 
         const processImageQueue = () => {
             while (imageQueue.length > 0 && activeImageTasks < MAX_IMAGE_CONCURRENCY) {
-                const songId = imageQueue.shift();
+                const task = imageQueue.shift();
                 activeImageTasks++;
-                loadSingleImage(songId).finally(() => {
+                loadSingleImage(task.songId, task.albumId).finally(() => {
                     activeImageTasks--;
                     if (imageQueue.length > 0) processImageQueue();
                 });
             }
         };
 
-        const loadSingleImage = async (songId) => {
-            const tryApi = (apiBase) => {
-                const url = buildApiUrl(apiBase, `/song/detail?ids=${songId}`);
-                return axios.get(url, { timeout: 3000 }).then(res => {
+        const loadSingleImage = async (songId, albumId) => {
+            if (albumId) {
+                for (let i = 0; i < Math.min(3, API_LIST.length); i++) {
+                    const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                    try {
+                        const url = buildApiUrl(apiBase, `/album?id=${albumId}`);
+                        const res = await axios.get(url, { timeout: 4000 });
+                        const album = res.data?.album || res.data?.data;
+                        const cover = extractCover(album);
+                        if (cover && !cover.includes('flaticon')) {
+                            const idx = searchResults.value.findIndex(s => s.id === songId);
+                            if (idx >= 0) {
+                                searchResults.value[idx].picUrl = cover;
+                                searchResults.value[idx].loadingCover = false;
+                            }
+                            return true;
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            for (let i = 0; i < Math.min(3, API_LIST.length); i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                try {
+                    const url = buildApiUrl(apiBase, `/song/detail?ids=${songId}`);
+                    const res = await axios.get(url, { timeout: 3000 });
                     const detail = res.data?.songs?.[0] || res.data?.data?.[0];
                     if (detail) {
                         const cover = extractCover(detail);
-                        if (cover && !cover.includes('flaticon')) return cover;
+                        if (cover && !cover.includes('flaticon')) {
+                            const idx = searchResults.value.findIndex(s => s.id === songId);
+                            if (idx >= 0) {
+                                searchResults.value[idx].picUrl = cover;
+                                searchResults.value[idx].loadingCover = false;
+                            }
+                            return true;
+                        }
                     }
-                    throw new Error('no cover');
-                });
-            };
-
-            const apis = [
-                API_LIST[currentApiIndex],
-                API_LIST[(currentApiIndex + 1) % API_LIST.length],
-                API_LIST[(currentApiIndex + 2) % API_LIST.length]
-            ];
-
-            try {
-                const cover = await Promise.any(apis.map(tryApi));
-                const idx = searchResults.value.findIndex(s => s.id === songId);
-                if (idx >= 0) {
-                    searchResults.value[idx].picUrl = cover;
-                    searchResults.value[idx].loadingCover = false;
-                }
-                return true;
-            } catch (e) {
-                const idx = searchResults.value.findIndex(s => s.id === songId);
-                if (idx >= 0) searchResults.value[idx].loadingCover = false;
-                return false;
+                } catch (e) {}
             }
+
+            const idx = searchResults.value.findIndex(s => s.id === songId);
+            if (idx >= 0) searchResults.value[idx].loadingCover = false;
+            return false;
         };
 
         const loadImagesForResults = (songs) => {
             const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             songs.forEach(song => {
                 if (!song.picUrl || song.picUrl === defaultCover || song.picUrl.includes('flaticon')) {
-                    enqueueImageLoad(song.id);
+                    enqueueImageLoad(song.id, song.albumId);
                 }
             });
         };
@@ -772,9 +783,10 @@ createApp({
                 return;
             }
             const songId = img.dataset.id;
-            if (songId && img.dataset.detailTried !== 'true') {
+            const song = searchResults.value.find(s => s.id === songId);
+            if (songId && song && img.dataset.detailTried !== 'true') {
                 img.dataset.detailTried = 'true';
-                enqueueImageLoad(songId);
+                enqueueImageLoad(songId, song.albumId);
             }
             img.src = DEFAULT;
             const wrapper = img.closest('.cover-wrapper');
@@ -785,7 +797,7 @@ createApp({
         };
 
         /* ============================================================
-           搜索：音乐主链路 + 图片独立链路
+           搜索：音乐主链路 + 图片独立链路（带 albumId）
            ============================================================ */
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
@@ -823,10 +835,11 @@ createApp({
                 const artist = (item.artists || item.ar || []).map(a => a.name || a).join(' / ') || item.artist || '未知';
                 const dur = item.duration || item.dt || 0;
                 const isVip = checkIsVip(item);
+                const albumId = item.album?.id || item.al?.id || null;
                 let picUrl = extractCover(item);
                 const needsCover = !picUrl || picUrl.includes('flaticon');
                 if (needsCover) picUrl = defaultCover;
-                return { id: String(id), name, artist, duration: dur, picUrl, isVip, loadingCover: needsCover };
+                return { id: String(id), name, artist, duration: dur, picUrl, isVip, albumId, loadingCover: needsCover };
             });
             loadingSearch.value = false;
 
@@ -1349,6 +1362,24 @@ createApp({
             localStorage.setItem('karaokeEnabled', karaokeEnabled.value);
         };
 
+        /* ✅ 播放界面里的卡拉OK 开关 */
+        const toggleKaraokeFromPlayer = () => {
+            karaokeEnabled.value = !karaokeEnabled.value;
+            saveKaraokeEnabled();
+            if (karaokeEnabled.value && fullscreenPlayerVisible.value) {
+                startKaraokeLoop();
+                playErrorMsg.value = '🎤 卡拉OK 已开启';
+            } else {
+                stopKaraokeLoop();
+                // 关闭时清除当前行的渐变，避免残留
+                document.querySelectorAll('.fullscreen-lyric-line.active').forEach(el => {
+                    el.style.removeProperty('--karaoke-percent');
+                });
+                playErrorMsg.value = '🎤 卡拉OK 已关闭';
+            }
+            setTimeout(() => { if (playErrorMsg.value.includes('卡拉OK')) playErrorMsg.value = ''; }, 2000);
+        };
+
         /* ========== 自定义字体 ========== */
         const FONT_DB_NAME = 'cloudmusic-db';
         const FONT_STORE = 'fonts';
@@ -1613,6 +1644,7 @@ createApp({
                             duration: track.dt || track.duration || 0,
                             picUrl,
                             isVip: checkIsVip(track),
+                            albumId: track.album?.id || track.al?.id || null,
                             loadingCover: false
                         };
                     });
@@ -1823,7 +1855,7 @@ createApp({
             seekToLyric, onLyricPointerDown,
             currentTheme, openThemeModal, closeThemeModal, setTheme,
             customAccent, customBgStart, customBgEnd, applyCustomColors,
-            karaokeEnabled, saveKaraokeEnabled,
+            karaokeEnabled, saveKaraokeEnabled, toggleKaraokeFromPlayer,
             bgImageUrl, blurEnabled, bgBlur, cardOpacity, containerOpacity, maskOpacity, glassIntensity,
             saveBgImage, resetBgImage, saveBlurEnabled, saveBgBlur, saveCardOpacity, saveContainerOpacity, saveMaskOpacity, saveGlassIntensity,
             fontScale, saveFontScale,
