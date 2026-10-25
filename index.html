@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>云音匣 · 网易云免费播放器</title>
 
-    <link rel="icon" href="./assets/favicon.ico?v=20" type="image/x-icon">
-    <link rel="shortcut icon" href="./assets/favicon.ico?v=20" type="image/x-icon">
+    <link rel="icon" href="./assets/favicon.ico?v=21" type="image/x-icon">
+    <link rel="shortcut icon" href="./assets/favicon.ico?v=21" type="image/x-icon">
 
-    <link rel="manifest" href="./manifest.json?v=19">
+    <link rel="manifest" href="./manifest.json?v=20">
     <meta name="theme-color" content="#d44c2f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="云音匣">
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=19">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/icon-192.png?v=20">
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -209,6 +209,7 @@
                     <button class="ctrl-btn icon-btn" @click="fullscreenTogglePlayPause">{{ fullscreenIsPlaying ? '⏸️' : '▶️' }}</button>
                     <button class="ctrl-btn icon-btn" @click="userNext">⏭️</button>
                     <button class="ctrl-btn icon-btn loop-mode-btn" @click="toggleLoopMode" :title="loopModeLabel">{{ loopModeIcon }}</button>
+                    <button class="ctrl-btn icon-btn karaoke-btn" :class="{ 'karaoke-on': karaokeEnabled }" @click="toggleKaraokeFromPlayer" :title="karaokeEnabled ? '关闭卡拉OK' : '开启卡拉OK'">🎤</button>
                     <button class="ctrl-btn download-btn" @click="downloadCurrentSong">⬇️ 下载</button>
                 </div>
             </div>
@@ -355,7 +356,7 @@
 
                     <div>
                         <div class="settings-title">🎤 卡拉OK 渐变效果</div>
-                        <div class="settings-desc">开启后全屏歌词按进度填充颜色（KTV 效果）</div>
+                        <div class="settings-desc">开启后全屏歌词按进度填充颜色（KTV 效果），默认关闭</div>
                         <label class="switch-label">
                             <span class="switch-text">卡拉OK 渐变</span>
                             <label class="switch">
