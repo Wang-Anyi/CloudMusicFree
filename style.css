@@ -1481,3 +1481,39 @@ body.mobile-view .playlist-grid .playlist-item .pl-cover {
         box-sizing: border-box;
     }
 }
+
+/* ============================================================
+   调试日志弹窗
+   ============================================================ */
+.log-export-content {
+    max-width: 640px;
+    width: 95%;
+}
+.log-export-body {
+    text-align: left;
+    padding: 20px 22px;
+    max-height: calc(100dvh - 200px);
+    overflow-y: auto;
+}
+.log-export-body .settings-input {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+}
+.log-textarea {
+    line-height: 1.55;
+    white-space: pre;
+    overflow-x: auto;
+    background: rgba(0, 0, 0, 0.03);
+}
+.theme-dark .log-textarea,
+.theme-deep-purple .log-textarea,
+.theme-hc-a .log-textarea {
+    background: rgba(255, 255, 255, 0.05);
+}
+.log-hint {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: var(--lyrics-active-color);
+    font-weight: 600;
+    line-height: 1.5;
+}
