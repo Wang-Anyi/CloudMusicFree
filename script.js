@@ -1355,7 +1355,6 @@ createApp({
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src) { playErrorMsg.value = '没有正在播放的歌曲'; return; }
-            if (currentIsVip.value) { playErrorMsg.value = 'VIP歌曲暂不支持下载'; return; }
             if (window.__downloading) { playErrorMsg.value = '⏳ 正在下载中，请稍候...'; return; }
 
             window.__downloading = true;
@@ -1454,7 +1453,7 @@ createApp({
                 if (coverBuffer) features.push('封面');
                 if (lyricText) features.push(hasTranslation ? '歌词(含翻译)' : '歌词');
                 features.push('完整信息');
-                playErrorMsg.value = `✅ 下载完成（含${features.join(' / ')}）`;
+                playErrorMsg.value = `✅ 下载完成（含${features.join(' / ')}）${currentIsVip.value ? '（VIP 可能仅含试听部分）' : ''}`;
                 setTimeout(() => { if (playErrorMsg.value.includes('下载完成')) playErrorMsg.value = ''; }, 3000);
             } catch (e) {
                 console.error('[下载] 失败:', e);
@@ -1687,9 +1686,6 @@ createApp({
             setTimeout(() => { if (playErrorMsg.value.includes('卡拉OK')) playErrorMsg.value = ''; }, 2000);
         };
 
-        /* ============================================================
-           自定义字体持久化：原生 IndexedDB（不再依赖 idb 库）
-           ============================================================ */
         const FONT_DB_NAME = 'cloudmusic-db';
         const FONT_STORE = 'fonts';
         const FONT_KEY = 'custom-font';
@@ -2137,10 +2133,28 @@ createApp({
             hideVipModal();
         };
 
+        /* ✅ 点击歌曲时把当前列表设为播放队列，实现"在当前歌单/搜索结果里循环" */
         const handlePlayClick = (song) => {
-            if (song.isVip && !userCookie.value.trim()) showVipModal(song);
-            else playSongById(song.id, song.name, song.artist, song.picUrl, true, -1, !!song.isVip);
+            if (song.isVip && !userCookie.value.trim()) {
+                showVipModal(song);
+                return;
+            }
+            const sourceList = searchResults.value;
+            if (sourceList && sourceList.length) {
+                const newQueue = sourceList.map(s => ({
+                    id: String(s.id),
+                    name: s.name,
+                    artist: s.artist,
+                    picUrl: s.picUrl,
+                    isVip: !!s.isVip
+                }));
+                queue.value = newQueue;
+                const idx = newQueue.findIndex(s => String(s.id) === String(song.id));
+                currentQueueIndex = idx >= 0 ? idx : -1;
+            }
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, currentQueueIndex, !!song.isVip);
         };
+
         const parseById = async () => {
             const id = extractSongId(songIdInput.value);
             if (!id) return alert('请输入正确的歌曲ID或链接');
