@@ -1,11 +1,11 @@
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
-/* 默认封面：内联灰色人像 SVG，不依赖任何外部 CDN */
+/* 默认封面：内联灰色人像 SVG，颜色加深，确保可见（不是白色） */
 const DEFAULT_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
-    '<rect width="200" height="200" fill="#e8e0d5"/>' +
-    '<circle cx="100" cy="75" r="30" fill="#b8a090"/>' +
-    '<path d="M40 180 Q100 120 160 180 L160 200 L40 200 Z" fill="#b8a090"/>' +
+    '<rect width="200" height="200" fill="#d8d8d8"/>' +
+    '<circle cx="100" cy="72" r="32" fill="#8a8a8a"/>' +
+    '<path d="M36 184 Q100 116 164 184 L164 200 L36 200 Z" fill="#8a8a8a"/>' +
     '</svg>'
 );
 
@@ -295,7 +295,7 @@ createApp({
         const toHttps = (url) => (url && typeof url === 'string') ? url.replace(/^http:\/\//i, 'https://') : url;
 
         /* ============================================================
-           封面相关工具
+           封面工具：统一走 weserv 代理（绕开网易云 Referer 限制）
            ============================================================ */
         const fixImageUrl = (url) => {
             if (!url || typeof url !== 'string') return '';
@@ -306,7 +306,6 @@ createApp({
             return url.replace(/^http:\/\//i, 'https://');
         };
 
-        // 统一走 weserv 代理，规避网易云 CDN 的 Referer 限制
         const proxyCover = (url, size = 200) => {
             if (!url || typeof url !== 'string' || !url.startsWith('http')) return '';
             if (url.includes('images.weserv.nl')) return url;
@@ -314,14 +313,13 @@ createApp({
             return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=${size}&h=${size}&fit=cover&output=jpg`;
         };
 
-        // 封面请求 Promise 缓存，避免重复请求
-        const coverPromiseCache = new Map();
-
         /* ============================================================
            ✅ 核心：按歌曲 ID 解析封面
-           官方接口 + 前 3 个第三方 API 并发，谁先返回有效 URL 用谁
-           超时 3 秒，结果缓存
+           官方接口 + 前 4 个第三方 API 并发，6 秒超时（恢复原超时）
+           谁先返回有效 URL 就用谁，结果 Promise 缓存
            ============================================================ */
+        const coverPromiseCache = new Map();
+
         const fetchCoverBySongId = (songId, size = 200) => {
             const key = `${songId}_${size}`;
             if (coverPromiseCache.has(key)) return coverPromiseCache.get(key);
@@ -329,9 +327,9 @@ createApp({
             const promise = (async () => {
                 const tasks = [];
 
-                // 官方接口
+                // 网易云官方接口
                 tasks.push(
-                    axios.get(`https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`, { timeout: 3000 })
+                    axios.get(`https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`, { timeout: 6000 })
                         .then(r => {
                             const s = r.data?.songs?.[0];
                             return s?.album?.picUrl || s?.album?.blurPicUrl || '';
@@ -339,11 +337,11 @@ createApp({
                         .catch(() => '')
                 );
 
-                // 前 3 个第三方 API 并发
-                for (let i = 0; i < Math.min(3, API_LIST.length); i++) {
+                // 前 4 个第三方 API 并发
+                for (let i = 0; i < Math.min(4, API_LIST.length); i++) {
                     const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
                     tasks.push(
-                        axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 3000 })
+                        axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 6000 })
                             .then(r => {
                                 const s = r.data?.songs?.[0] || r.data?.data?.[0];
                                 return s?.al?.picUrl || s?.album?.picUrl || '';
@@ -374,11 +372,11 @@ createApp({
         };
 
         /* ============================================================
-           批量补封面：只对没有封面的歌按 ID 拉取，并发 8 个
+           批量补封面：所有没有封面的歌按 ID 拉取，并发 8
            ============================================================ */
         const enrichCoversBySongId = async (songs) => {
             if (!songs || !songs.length) return;
-            const needList = songs.filter(s => s.needFetchCover || !s.picUrl || s.picUrl === DEFAULT_COVER);
+            const needList = songs.filter(s => s.needFetchCover);
             if (!needList.length) return;
 
             const CONCURRENCY = 8;
@@ -396,35 +394,10 @@ createApp({
                         }
                     } else {
                         song.loadingCover = false;
+                        song.needFetchCover = false;
                     }
                 }));
             }
-        };
-
-        /* ============================================================
-           从搜索结果里直接拿 picUrl（有就秒出，不用等 ID 请求）
-           ============================================================ */
-        const pickDirectCover = (item) => {
-            if (!item || typeof item !== 'object') return '';
-            const candidates = [];
-            if (item.al && typeof item.al === 'object') {
-                candidates.push(item.al.picUrl, item.al.blurPicUrl, item.al.pic_str);
-            }
-            if (item.album && typeof item.album === 'object') {
-                candidates.push(item.album.picUrl, item.album.blurPicUrl);
-            }
-            candidates.push(item.picUrl, item.pic, item.cover, item.coverImgUrl, item.img1v1Url);
-            if (Array.isArray(item.ar) && item.ar[0] && typeof item.ar[0] === 'object') {
-                candidates.push(item.ar[0].picUrl);
-            }
-            if (Array.isArray(item.artists) && item.artists[0] && typeof item.artists[0] === 'object') {
-                candidates.push(item.artists[0].picUrl, item.artists[0].img1v1Url);
-            }
-            for (const c of candidates) {
-                const fixed = fixImageUrl(c);
-                if (fixed) return fixed;
-            }
-            return '';
         };
 
         const checkIsVip = (item) => {
@@ -822,7 +795,7 @@ createApp({
         };
 
         /* ============================================================
-           搜索：有 picUrl 立即秒出，没有则按 ID 拉取
+           搜索：搜索结果统一用默认图占位，然后全部按 ID 拉封面
            ============================================================ */
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
@@ -861,22 +834,17 @@ createApp({
                 const isVip = checkIsVip(item);
                 const albumId = item.album?.id || item.al?.id || item.albumId || null;
 
-                // ✅ 搜索接口如果直接返回了 picUrl，立即通过 weserv 代理显示，秒出
-                const directCover = pickDirectCover(item);
-                const picUrl = directCover ? proxyCover(directCover, 200) : DEFAULT_COVER;
-                const needFetchCover = !directCover;
-
                 return {
                     id, name, artist, duration: dur,
-                    picUrl,
+                    picUrl: DEFAULT_COVER,
                     isVip, albumId,
-                    loadingCover: needFetchCover,
-                    needFetchCover
+                    loadingCover: true,
+                    needFetchCover: true
                 };
             });
             loadingSearch.value = false;
 
-            // 只有没有 picUrl 的歌才按 ID 拉
+            // 全部按 ID 拉封面
             enrichCoversBySongId(searchResults.value);
         };
 
@@ -971,7 +939,6 @@ createApp({
                 currentSongName.value = songName || '未知歌曲';
                 currentArtist.value = artistName || '网易云音乐';
 
-                // 传入的封面如果是 weserv 代理或有效 http 地址，先用它秒出
                 let initialCover = DEFAULT_COVER;
                 if (coverUrl && coverUrl.startsWith('http') && coverUrl !== DEFAULT_COVER) {
                     initialCover = coverUrl;
@@ -1000,7 +967,6 @@ createApp({
                 fullscreenCover.value = currentCover.value;
                 if (initialCover !== DEFAULT_COVER) setDynamicGradient(initialCover);
 
-                // 如果是默认图，用 ID 拉封面（高清 500）
                 if (initialCover === DEFAULT_COVER) {
                     fetchCoverBySongId(songId, 500).then(cover => {
                         if (cover && currentSongId === songId) {
@@ -1677,18 +1643,16 @@ createApp({
 
                 if (rawSongs && rawSongs.length) {
                     const songList = rawSongs.map(track => {
-                        const directCover = pickDirectCover(track);
-                        const picUrl = directCover ? proxyCover(directCover, 200) : DEFAULT_COVER;
                         return {
                             id: String(track.id),
                             name: track.name || '未知',
                             artist: (track.ar || track.artists || []).map(a => a.name || a).join('/') || '未知',
                             duration: track.dt || track.duration || 0,
-                            picUrl,
+                            picUrl: DEFAULT_COVER,
                             isVip: checkIsVip(track),
                             albumId: track.album?.id || track.al?.id || track.albumId || null,
-                            loadingCover: !directCover,
-                            needFetchCover: !directCover
+                            loadingCover: true,
+                            needFetchCover: true
                         };
                     });
                     searchResults.value = songList;
@@ -1810,8 +1774,7 @@ createApp({
             try {
                 const detail = await getSongDetail(id);
                 const isVip = checkIsVip(detail);
-                const directCover = pickDirectCover(detail);
-                const picUrl = directCover ? proxyCover(directCover, 200) : DEFAULT_COVER;
+                const picUrl = DEFAULT_COVER;
                 const song = { id: String(detail.id), name: detail.name, artist: (detail.ar || []).map(a => a.name).join('/'), picUrl, isVip };
                 if (isVip && !userCookie.value.trim()) showVipModal(song);
                 else playSongById(song.id, song.name, song.artist, song.picUrl);
