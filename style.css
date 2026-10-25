@@ -950,3 +950,488 @@ body::before {
     .my-playlist-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
     #myPlaylistsModal .modal-body { padding: 14px 14px; }
 }
+
+/* ============================================================
+   移动端 Apple Music 风格 + 液态玻璃布局
+   桌面端（默认）完全不受影响
+   ============================================================ */
+
+/* 默认隐藏移动端专属元素 */
+.mobile-mini-player { display: none; }
+
+/* 移动端生效：body.mobile-view 由 script.js 动态添加 */
+body.mobile-view {
+    --lg-blur: 24px;
+    --lg-saturate: 180%;
+    --lg-bg-light: linear-gradient(135deg, rgba(255,255,255,0.65), rgba(255,255,255,0.45));
+    --lg-bg-dark:  linear-gradient(135deg, rgba(60,60,80,0.65), rgba(30,30,50,0.5));
+    --lg-border-light: rgba(255,255,255,0.6);
+    --lg-border-dark:  rgba(255,255,255,0.12);
+    --lg-highlight-light: inset 0 1px 0 rgba(255,255,255,0.9);
+    --lg-highlight-dark:  inset 0 1px 0 rgba(255,255,255,0.15);
+    --lg-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    --lg-shadow-dark: 0 8px 32px rgba(0,0,0,0.5);
+    --lg-radius: 22px;
+
+    padding: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+}
+
+/* 深色主题下的液态玻璃变量 */
+body.mobile-view.theme-dark,
+body.mobile-view.theme-deep-purple,
+body.mobile-view.theme-hc-a {
+    --lg-bg-light: var(--lg-bg-dark);
+    --lg-border-light: var(--lg-border-dark);
+    --lg-highlight-light: var(--lg-highlight-dark);
+    --lg-shadow: var(--lg-shadow-dark);
+}
+
+/* ========== App Container ========== */
+body.mobile-view .app-container {
+    max-width: 100%;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    border: none;
+    min-height: 100dvh;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ========== Header 液态玻璃顶部栏 ========== */
+body.mobile-view .header {
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    margin: 0;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    background: var(--lg-bg-light);
+    backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+    -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+    border-bottom: 1px solid var(--lg-border-light);
+    box-shadow: var(--lg-highlight-light), 0 4px 20px rgba(0,0,0,0.06);
+}
+body.mobile-view .header-left h1 {
+    font-size: 1.4rem;
+    letter-spacing: -0.3px;
+}
+body.mobile-view .header-left p { display: none; }
+
+body.mobile-view .header-buttons {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 8px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+}
+body.mobile-view .header-buttons::-webkit-scrollbar { display: none; }
+body.mobile-view .header-buttons .theme-toggle {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    font-size: 0.78rem;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.55);
+    color: var(--text-primary);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--lg-border-light);
+    box-shadow: var(--lg-highlight-light);
+    font-weight: 500;
+}
+body.mobile-view.theme-dark .header-buttons .theme-toggle,
+body.mobile-view.theme-deep-purple .header-buttons .theme-toggle,
+body.mobile-view.theme-hc-a .header-buttons .theme-toggle {
+    background: rgba(255,255,255,0.1);
+    border-color: var(--lg-border-dark);
+    color: var(--text-primary);
+}
+
+/* ========== 主网格 → 单栏 ========== */
+body.mobile-view .main-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 14px 14px 0;
+}
+
+/* 右栏：隐藏大播放器卡片（改用 mini-player + 全屏播放器） */
+body.mobile-view .right-panel .player-card {
+    display: none;
+}
+body.mobile-view .right-panel {
+    gap: 14px;
+}
+
+/* ========== 卡片：液态玻璃 ========== */
+body.mobile-view .search-card,
+body.mobile-view .playlist-section,
+body.mobile-view .lyrics-card,
+body.mobile-view .history-card {
+    background: var(--lg-bg-light);
+    backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+    -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+    border: 1px solid var(--lg-border-light);
+    border-radius: var(--lg-radius);
+    box-shadow: var(--lg-highlight-light), var(--lg-shadow);
+    padding: 16px;
+}
+
+body.mobile-view .left-panel {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    padding: 0;
+    border-radius: 0;
+    gap: 14px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ========== 输入框：胶囊 + 液态 ========== */
+body.mobile-view .search-input,
+body.mobile-view .small-input {
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--lg-border-light);
+    border-radius: 20px;
+    padding: 12px 16px;
+    font-size: 0.92rem;
+    box-shadow: var(--lg-highlight-light);
+    color: #2a2a2a;
+}
+body.mobile-view.theme-dark .search-input,
+body.mobile-view.theme-dark .small-input,
+body.mobile-view.theme-deep-purple .search-input,
+body.mobile-view.theme-deep-purple .small-input,
+body.mobile-view.theme-hc-a .search-input,
+body.mobile-view.theme-hc-a .small-input {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-primary);
+}
+
+body.mobile-view .search-box {
+    flex-direction: column;
+    gap: 10px;
+}
+body.mobile-view .search-box .btn-primary {
+    width: 100%;
+    min-height: 44px;
+}
+
+body.mobile-view .id-parse-group {
+    flex-direction: column;
+    gap: 10px;
+    background: transparent;
+    padding: 0;
+}
+body.mobile-view .id-parse-group .btn-outline {
+    width: 100%;
+    min-height: 44px;
+}
+
+/* ========== 按钮：液态胶囊 ========== */
+body.mobile-view .btn {
+    border-radius: 20px;
+    min-height: 42px;
+    font-size: 0.9rem;
+}
+
+/* ========== 歌单网格：横向滚动（Apple Music 风格） ========== */
+body.mobile-view .playlist-grid {
+    display: flex;
+    overflow-x: auto;
+    gap: 12px;
+    padding: 4px 0 8px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+}
+body.mobile-view .playlist-grid::-webkit-scrollbar { display: none; }
+
+body.mobile-view .playlist-item {
+    flex: 0 0 140px;
+    scroll-snap-align: start;
+    background: rgba(255,255,255,0.55);
+    border: 1px solid var(--lg-border-light);
+    border-radius: 18px;
+    padding: 10px;
+    box-shadow: var(--lg-highlight-light), 0 4px 12px rgba(0,0,0,0.08);
+}
+body.mobile-view.theme-dark .playlist-item,
+body.mobile-view.theme-deep-purple .playlist-item,
+body.mobile-view.theme-hc-a .playlist-item {
+    background: rgba(255,255,255,0.08);
+}
+
+/* ========== 歌曲列表：圆角胶囊 ========== */
+body.mobile-view .song-list {
+    max-height: none;
+    padding: 0;
+}
+body.mobile-view .song-item {
+    padding: 12px 14px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+    background: var(--lg-bg-light);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid var(--lg-border-light);
+    box-shadow: var(--lg-highlight-light), 0 4px 14px rgba(0,0,0,0.08);
+}
+body.mobile-view .song-item:hover { transform: none; }
+body.mobile-view .song-item:active {
+    transform: scale(0.98);
+    background: var(--lyrics-active-bg);
+}
+body.mobile-view.theme-dark .song-item,
+body.mobile-view.theme-deep-purple .song-item,
+body.mobile-view.theme-hc-a .song-item {
+    background: var(--lg-bg-dark);
+}
+
+body.mobile-view .song-cover {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+}
+body.mobile-view .cover-wrapper {
+    width: 52px;
+    height: 52px;
+}
+body.mobile-view .play-btn-small {
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.5);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--lg-border-light);
+}
+
+/* ========== 搜索/列表 Header ========== */
+body.mobile-view .section-title,
+body.mobile-view .results-header {
+    font-size: 1.05rem;
+    padding-left: 4px;
+    border-left: none;
+    margin: 4px 0 10px 0;
+    font-weight: 700;
+}
+
+/* ========== Footer ========== */
+body.mobile-view .footer-note {
+    margin: 20px 14px 100px;
+    padding: 16px 12px;
+    font-size: 0.68rem;
+    border-top: none;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.25);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+body.mobile-view.theme-dark .footer-note,
+body.mobile-view.theme-deep-purple .footer-note,
+body.mobile-view.theme-hc-a .footer-note {
+    background: rgba(255,255,255,0.06);
+}
+
+/* ============================================================
+   移动端 Mini Player（液态玻璃，固定在底部）
+   ============================================================ */
+body.mobile-view .mobile-mini-player {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 500;
+    padding: 8px 10px 8px 8px;
+    background: var(--lg-bg-light);
+    backdrop-filter: blur(30px) saturate(220%);
+    -webkit-backdrop-filter: blur(30px) saturate(220%);
+    border: 1px solid var(--lg-border-light);
+    border-radius: 26px;
+    box-shadow:
+        var(--lg-highlight-light),
+        0 12px 40px rgba(0, 0, 0, 0.18),
+        0 2px 8px rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.25s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+body.mobile-view.theme-dark .mobile-mini-player,
+body.mobile-view.theme-deep-purple .mobile-mini-player,
+body.mobile-view.theme-hc-a .mobile-mini-player {
+    background: var(--lg-bg-dark);
+    border-color: var(--lg-border-dark);
+    box-shadow:
+        var(--lg-highlight-dark),
+        0 12px 40px rgba(0, 0, 0, 0.5),
+        0 2px 8px rgba(0, 0, 0, 0.3);
+}
+body.mobile-view .mobile-mini-player:active {
+    transform: scale(0.98);
+}
+
+body.mobile-view .mini-cover-wrap {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.06);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(255,255,255,0.4);
+}
+body.mobile-view .mini-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+body.mobile-view .mini-cover-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    color: var(--text-secondary);
+    background: linear-gradient(135deg, rgba(255,255,255,0.6), rgba(255,255,255,0.3));
+}
+
+body.mobile-view .mini-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+body.mobile-view .mini-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -0.2px;
+}
+body.mobile-view .mini-artist {
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+body.mobile-view .mini-btn {
+    background: rgba(255,255,255,0.35);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--lg-border-light);
+    font-size: 1.15rem;
+    padding: 0;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-primary);
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: transform 0.15s ease, background 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+body.mobile-view.theme-dark .mini-btn,
+body.mobile-view.theme-deep-purple .mini-btn,
+body.mobile-view.theme-hc-a .mini-btn {
+    background: rgba(255,255,255,0.1);
+    border-color: var(--lg-border-dark);
+}
+body.mobile-view .mini-btn:active {
+    transform: scale(0.9);
+    background: var(--lyrics-active-color);
+    color: white;
+}
+
+/* ============================================================
+   移动端全屏播放器：加强液态玻璃感
+   ============================================================ */
+body.mobile-view .fullscreen-modal {
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+}
+body.mobile-view .fullscreen-container {
+    border-radius: 32px;
+    background: var(--lg-bg-dark);
+    backdrop-filter: blur(40px) saturate(200%);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid var(--lg-border-dark);
+    box-shadow:
+        var(--lg-highlight-dark),
+        0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+/* ============================================================
+   移动端模态框：液态玻璃
+   ============================================================ */
+body.mobile-view .modal-content {
+    background: var(--lg-bg-light);
+    backdrop-filter: blur(30px) saturate(200%);
+    -webkit-backdrop-filter: blur(30px) saturate(200%);
+    border: 1px solid var(--lg-border-light);
+    box-shadow:
+        var(--lg-highlight-light),
+        0 24px 60px rgba(0,0,0,0.35);
+    border-radius: 28px;
+}
+body.mobile-view.theme-dark .modal-content,
+body.mobile-view.theme-deep-purple .modal-content,
+body.mobile-view.theme-hc-a .modal-content {
+    background: var(--lg-bg-dark);
+    border-color: var(--lg-border-dark);
+    box-shadow:
+        var(--lg-highlight-dark),
+        0 24px 60px rgba(0,0,0,0.7);
+}
+
+body.mobile-view .modal-header {
+    background: rgba(255,255,255,0.3);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--lg-border-light);
+}
+body.mobile-view.theme-dark .modal-header,
+body.mobile-view.theme-deep-purple .modal-header,
+body.mobile-view.theme-hc-a .modal-header {
+    background: rgba(255,255,255,0.06);
+    border-bottom-color: var(--lg-border-dark);
+}
+
+/* ============================================================
+   移动端：横屏模式下调整 mini-player 位置
+   ============================================================ */
+@media (orientation: landscape) and (max-height: 500px) {
+    body.mobile-view .mobile-mini-player {
+        left: auto;
+        right: 16px;
+        bottom: 12px;
+        width: 340px;
+    }
+}
+
+/* ============================================================
+   桌面端：确保移动端元素不显示（默认已隐藏，双保险）
+   ============================================================ */
+body:not(.mobile-view) .mobile-mini-player {
+    display: none !important;
+}
