@@ -1,8 +1,7 @@
-document.title = '✅ 云音匣 v4 图片修复';
+document.title = '✅ 云音匣 v5 图片修复';
 
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
-// 默认封面：红色背景 + 白色音符（用 <path> 画，不依赖字体）
 const DEFAULT_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
     '<rect width="200" height="200" fill="#ff6b6b"/>' +
@@ -297,7 +296,7 @@ createApp({
 
         const weservWrap = (url, size = 200) => {
             const clean = String(url).replace(/^https?:\/\//i, '');
-            return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=${size}&h=${size}&fit=cover&output=jpg&default=1`;
+            return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=${size}&h=${size}&fit=cover&output=jpg`;
         };
 
         const fixImageUrl = (url) => {
@@ -307,12 +306,8 @@ createApp({
             if (url.startsWith('//')) url = 'https:' + url;
             if (!/^https?:\/\//i.test(url)) return '';
             url = url.replace(/^http:\/\//i, 'https://');
-            if (url.includes('images.weserv.nl')) return url;
-            if (/music\.126\.net/i.test(url)) {
-                if (!/[?&]param=/i.test(url)) {
-                    url += (url.includes('?') ? '&' : '?') + 'param=200y200';
-                }
-                return weservWrap(url, 200);
+            if (/music\.126\.net/i.test(url) && !/[?&]param=/i.test(url)) {
+                url += (url.includes('?') ? '&' : '?') + 'param=200y200';
             }
             return url;
         };
@@ -730,7 +725,7 @@ createApp({
                 target.loadingCover = false;
             }
             if (currentSongId && String(currentSongId) === String(songId) &&
-                (!currentCover.value || currentCover.value === DEFAULT_COVER || currentCover.value.includes('flaticon'))) {
+                (!currentCover.value || currentCover.value === DEFAULT_COVER)) {
                 currentCover.value = cover;
                 fullscreenCover.value = cover;
                 setDynamicGradient(cover);
@@ -786,7 +781,7 @@ createApp({
         const enrichCoversBatch = async (songs) => {
             if (!songs || !songs.length) return;
             const needIds = songs
-                .filter(s => !s.picUrl || s.picUrl === DEFAULT_COVER || s.picUrl.includes('flaticon'))
+                .filter(s => !s.picUrl || s.picUrl === DEFAULT_COVER)
                 .map(s => s.id);
             if (!needIds.length) return;
 
@@ -814,12 +809,12 @@ createApp({
                     const cover = extractCover(d);
                     if (!cover) return;
                     const target = songs.find(x => String(x.id) === String(d.id));
-                    if (target && (!target.picUrl || target.picUrl === DEFAULT_COVER || target.picUrl.includes('flaticon'))) {
+                    if (target && (!target.picUrl || target.picUrl === DEFAULT_COVER)) {
                         target.picUrl = cover;
                         target.loadingCover = false;
                     }
                     if (currentSongId && String(currentSongId) === String(d.id) &&
-                        (!currentCover.value || currentCover.value === DEFAULT_COVER || currentCover.value.includes('flaticon'))) {
+                        (!currentCover.value || currentCover.value === DEFAULT_COVER)) {
                         currentCover.value = cover;
                         fullscreenCover.value = cover;
                         setDynamicGradient(cover);
@@ -830,7 +825,7 @@ createApp({
 
         const loadImagesForResults = (songs) => {
             songs.forEach(song => {
-                if (!song.picUrl || song.picUrl === DEFAULT_COVER || song.picUrl.includes('flaticon')) {
+                if (!song.picUrl || song.picUrl === DEFAULT_COVER) {
                     enqueueImageLoad(song.id, song.albumId);
                 }
             });
@@ -838,7 +833,6 @@ createApp({
 
         const onImageLoad = (event) => {
             const img = event.target;
-            // 尺寸检测：weserv 或网易云返回的"错误小图"会被拦截
             if (img.naturalWidth && img.naturalWidth < 20) {
                 if (img.src !== DEFAULT_COVER) {
                     img.src = DEFAULT_COVER;
@@ -877,14 +871,12 @@ createApp({
                 return;
             }
 
-            // 原始网易云 URL 失败 → weserv 代理
             if (/music\.126\.net/i.test(current) && img.dataset.triedWeserv !== 'true') {
                 img.dataset.triedWeserv = 'true';
                 img.src = weservWrap(current, 200);
                 return;
             }
 
-            // 任何其他失败 → 默认图
             img.src = DEFAULT_COVER;
             hideLoading();
         };
@@ -1156,7 +1148,7 @@ createApp({
                 if (currentSongId === songId) {
                     currentAlbum.value = detail?.al?.name || detail?.album?.name || '';
                     const c = extractCover(detail);
-                    if (c && (!currentCover.value || currentCover.value === DEFAULT_COVER || currentCover.value.includes('flaticon'))) {
+                    if (c && (!currentCover.value || currentCover.value === DEFAULT_COVER)) {
                         currentCover.value = c;
                         fullscreenCover.value = c;
                         setDynamicGradient(c);
@@ -1917,7 +1909,6 @@ createApp({
                 navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW注册失败', e));
             }
 
-            // 兜底修复：把 referrerpolicy 从 no-referrer 改掉，避免网易云 CDN 拒绝
             const fixReferrer = () => {
                 document.querySelectorAll('img[referrerpolicy="no-referrer"]').forEach(img => {
                     img.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
@@ -1930,9 +1921,11 @@ createApp({
                         if (n.tagName === 'IMG' && n.getAttribute('referrerpolicy') === 'no-referrer') {
                             n.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
                         }
-                        n.querySelectorAll && n.querySelectorAll('img[referrerpolicy="no-referrer"]').forEach(img => {
-                            img.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
-                        });
+                        if (n.querySelectorAll) {
+                            n.querySelectorAll('img[referrerpolicy="no-referrer"]').forEach(img => {
+                                img.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+                            });
+                        }
                     }
                 }));
             });
