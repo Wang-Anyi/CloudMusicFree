@@ -472,6 +472,26 @@ body::before {
 .loop-mode-btn { font-size: 1.1rem; min-width: 44px; }
 .download-btn { background: #6c8b6e; color: white; }
 .download-btn:hover { background: #4a6b4c; }
+
+/* ✅ 卡拉OK 开关按钮（激活时高亮） */
+.karaoke-btn {
+    font-size: 1.1rem;
+    min-width: 44px;
+    opacity: 0.6;
+    transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+}
+.karaoke-btn.karaoke-on {
+    opacity: 1;
+    background: linear-gradient(100deg, var(--lyrics-active-color), var(--progress-thumb));
+    color: white;
+    box-shadow: 0 4px 14px rgba(212, 76, 47, 0.4);
+}
+.karaoke-btn.karaoke-on:hover {
+    background: linear-gradient(100deg, var(--lyrics-active-color), var(--progress-thumb));
+    color: white;
+    transform: translateY(-1px) scale(1.03);
+}
+
 @media (max-width: 768px) {
     .audio-control-buttons { gap: 8px; }
     .ctrl-btn { padding: 6px 14px; font-size: 0.8rem; }
@@ -741,7 +761,7 @@ body::before {
 .fullscreen-lyric-line.active .lyric-original { color: #ea8c5c; }
 .fullscreen-lyric-line.active .lyric-trans { color: #ea8c5c; opacity: 0.85; }
 
-/* ✅ 卡拉OK：用 ::after + attr(data-text) + clip-path（GPU 加速，非常流畅） */
+/* ✅ 卡拉OK：::after + attr(data-text) + clip-path，GPU 加速非常流畅 */
 .fullscreen-lyric-line.active.karaoke-on .lyric-original {
     position: relative;
     color: rgba(234, 140, 92, 0.35);
