@@ -1,5 +1,6 @@
-const { createApp, ref, onMounted, onUnmounted, nextTick, computed } = Vue;
+const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
+/* ========== 动态渐变背景 ========== */
 const gradientColorCache = new Map();
 
 const extractColorFromImage = (url) => {
@@ -35,6 +36,7 @@ const setDynamicGradient = async (coverUrl) => {
 
 createApp({
     setup() {
+        /* ========== 响应式数据 ========== */
         const searchKeyword = ref('');
         const songIdInput = ref('');
         const playlistUrlInput = ref('');
@@ -297,10 +299,16 @@ createApp({
 
         const extractCover = (item) => {
             if (!item) return '';
-            const raw = item.al?.picUrl || item.album?.picUrl
-                || item.album?.artist?.img1v1Url
-                || item.artists?.[0]?.img1v1Url
-                || item.cover || item.picUrl || item.img1v1Url || '';
+            let raw = '';
+            if (item.al?.picUrl) raw = item.al.picUrl;
+            else if (item.album?.picUrl) raw = item.album.picUrl;
+            else if (item.pic) raw = item.pic;
+            else if (item.picUrl) raw = item.picUrl;
+            else if (item.cover) raw = item.cover;
+            else if (item.img1v1Url) raw = item.img1v1Url;
+            else if (item.ar?.[0]?.picUrl) raw = item.ar[0].picUrl;
+            else if (item.artists?.[0]?.img1v1Url) raw = item.artists[0].img1v1Url;
+            else if (item.album?.artist?.img1v1Url) raw = item.album.artist.img1v1Url;
             return fixImageUrl(raw);
         };
 
@@ -454,14 +462,12 @@ createApp({
             }
         };
 
-        // ✅ 更新 --scroll-h 变量（spacer 高度 = 容器高度 × 42%）
         const updateFullscreenScrollH = () => {
             const container = fullscreenLyricsContainer.value || document.querySelector('.fullscreen-lyrics-scroll');
             if (!container) return;
             container.style.setProperty('--scroll-h', container.clientHeight + 'px');
         };
 
-        // ✅ 用 getBoundingClientRect 精确计算，目标位置 42%（居中偏上一点）
         let fullscreenScrollRaf = null;
         let pendingFullscreenScroll = null;
         const performFullscreenScroll = () => {
@@ -482,9 +488,7 @@ createApp({
             if (containerRect.height === 0) return;
 
             const currentScrollTop = container.scrollTop;
-            // 行中心相对容器内容顶部的距离
             const lineCenterInContent = lineRect.top - containerRect.top + currentScrollTop + lineRect.height / 2;
-            // 目标：行中心在容器 42% 高度处
             const targetRatio = 0.42;
             const target = lineCenterInContent - containerRect.height * targetRatio;
 
@@ -600,26 +604,62 @@ createApp({
             }
         };
 
-        // ✅ 修复：不再缓存元素，每次 querySelector + 检查 data-idx
-        const updateKaraoke = (currentSec) => {
+        /* ============================================================
+           ✅ 卡拉OK：rAF 循环，进度 = (当前时间 - 当前行开始) / (下一行开始 - 当前行开始)
+           间隔 1s 就 1s 走完，间隔 5s 就 5s 走完，每帧更新，极度流畅
+           ============================================================ */
+        let karaokeRafId = null;
+
+        const updateKaraokeFrame = () => {
             if (!fullscreenPlayerVisible.value) return;
             if (!karaokeEnabled.value) return;
-            if (fullscreenLyricIndex.value < 0) return;
+            const idx = fullscreenLyricIndex.value;
+            if (idx < 0) return;
+
+            const audio = audioPlayer.value;
+            if (!audio) return;
 
             const el = document.querySelector('.fullscreen-lyric-line.active');
             if (!el) return;
-            // 检查 DOM 是否已更新到当前行（避免拿到旧的 active 元素）
-            if (el.dataset.idx !== String(fullscreenLyricIndex.value)) return;
+            if (el.dataset.idx !== String(idx)) return;
 
-            const line = fullscreenLyrics.value[fullscreenLyricIndex.value];
+            const line = fullscreenLyrics.value[idx];
             if (!line) return;
-            const nextLine = fullscreenLyrics.value[fullscreenLyricIndex.value + 1];
-            const lineEnd = nextLine ? nextLine.time : line.time + 5;
-            const lineDuration = Math.max(0.1, lineEnd - line.time);
-            let progress = (currentSec - line.time) / lineDuration;
-            progress = Math.max(0, Math.min(1, progress));
+
+            const next = fullscreenLyrics.value[idx + 1];
+            const lineStart = line.time;
+            const lineEnd = next ? next.time : line.time + 5;
+            const lineDuration = Math.max(0.1, lineEnd - lineStart);
+
+            let progress = (audio.currentTime - lineStart) / lineDuration;
+            if (progress < 0) progress = 0;
+            if (progress > 1) progress = 1;
+
             el.style.setProperty('--karaoke-percent', `${progress * 100}%`);
         };
+
+        const tickKaraoke = () => {
+            updateKaraokeFrame();
+            karaokeRafId = requestAnimationFrame(tickKaraoke);
+        };
+
+        const startKaraokeLoop = () => {
+            stopKaraokeLoop();
+            if (!fullscreenPlayerVisible.value || !karaokeEnabled.value) return;
+            karaokeRafId = requestAnimationFrame(tickKaraoke);
+        };
+
+        const stopKaraokeLoop = () => {
+            if (karaokeRafId) {
+                cancelAnimationFrame(karaokeRafId);
+                karaokeRafId = null;
+            }
+        };
+
+        watch(karaokeEnabled, (enabled) => {
+            if (enabled && fullscreenPlayerVisible.value) startKaraokeLoop();
+            else stopKaraokeLoop();
+        });
 
         /* ========== 通用请求 ========== */
         const buildApiUrl = (apiBase, path) => {
@@ -645,7 +685,7 @@ createApp({
         };
 
         /* ============================================================
-           ✅ 独立图片加载链路（并发 3，竞速 2 API，3s 超时）
+           ✅ 独立图片加载链路（并发 3，竞速 3 个 API，3s 超时）
            ============================================================ */
         const imageQueue = [];
         let activeImageTasks = 0;
@@ -682,7 +722,8 @@ createApp({
 
             const apis = [
                 API_LIST[currentApiIndex],
-                API_LIST[(currentApiIndex + 1) % API_LIST.length]
+                API_LIST[(currentApiIndex + 1) % API_LIST.length],
+                API_LIST[(currentApiIndex + 2) % API_LIST.length]
             ];
 
             try {
@@ -722,12 +763,20 @@ createApp({
         const onImageError = (event) => {
             const img = event.target;
             const DEFAULT = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+            if (img.src === DEFAULT || img.src.includes('cdn-icons-png.flaticon.com')) {
+                const wrapper = img.closest('.cover-wrapper');
+                if (wrapper) {
+                    const loadingDiv = wrapper.querySelector('.cover-loading');
+                    if (loadingDiv) loadingDiv.style.display = 'none';
+                }
+                return;
+            }
             const songId = img.dataset.id;
             if (songId && img.dataset.detailTried !== 'true') {
                 img.dataset.detailTried = 'true';
                 enqueueImageLoad(songId);
             }
-            if (!img.src.includes('cdn-icons-png.flaticon.com')) img.src = DEFAULT;
+            img.src = DEFAULT;
             const wrapper = img.closest('.cover-wrapper');
             if (wrapper) {
                 const loadingDiv = wrapper.querySelector('.cover-loading');
@@ -781,13 +830,10 @@ createApp({
             });
             loadingSearch.value = false;
 
-            // 图片走独立队列
             loadImagesForResults(searchResults.value);
         };
 
-        /* ============================================================
-           解析优先级
-           ============================================================ */
+        /* ========== 解析优先级 ========== */
         const outerUrlCache = new Map();
         const probeOuterUrl = (songId, allowShort = false) => {
             const key = `${songId}_${allowShort}`;
@@ -1145,7 +1191,6 @@ createApp({
                 fullscreenDuration.value = audio.duration;
                 fullscreenProgressValue.value = percent;
                 updateLyrics(audio.currentTime);
-                updateKaraoke(audio.currentTime);
             }
         };
 
@@ -1217,12 +1262,12 @@ createApp({
                     if (currentLyricIndex.value !== fullscreenLyricIndex.value) fullscreenLyricIndex.value = currentLyricIndex.value;
                 }
             }, 200);
-            // ✅ 双重 rAF 确保 DOM 完全渲染后再滚动
             nextTick(() => {
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
                         updateFullscreenScrollH();
                         scrollFullscreenLyricsToActive();
+                        startKaraokeLoop();
                     });
                 });
             });
@@ -1232,6 +1277,7 @@ createApp({
             document.getElementById('fullscreenPlayer').style.display = 'none';
             document.body.style.overflow = '';
             if (fullscreenInterval) clearInterval(fullscreenInterval);
+            stopKaraokeLoop();
         };
         const fullscreenSeek = () => {
             const a = audioPlayer.value;
@@ -1437,16 +1483,32 @@ createApp({
             }
         };
 
-        /* ========== 热门歌单 ========== */
+        /* ========== 热门歌单（过滤「喜欢的音乐」类） ========== */
         const loadPlaylists = async () => {
-            const ids = ['3778678', '19723756', '3136952023', '6727748870', '2253631882'];
-            const randomIds = ids.sort(() => 0.5 - Math.random()).slice(0, 4);
+            const allIds = [
+                '3778678',
+                '19723756',
+                '3136952023',
+                '6727748870',
+                '2253631882',
+                '2884035',
+                '3779629'
+            ];
+            const shuffled = allIds.sort(() => 0.5 - Math.random());
             const plist = [];
-            for (const pid of randomIds) {
+            for (const pid of shuffled) {
+                if (plist.length >= 4) break;
                 try {
                     const res = await requestWithFallback(`/playlist/detail?id=${pid}`, { timeout: 8000 });
                     if (res.data && res.data.playlist) {
-                        plist.push({ id: res.data.playlist.id, name: res.data.playlist.name, coverImgUrl: toHttps(res.data.playlist.coverImgUrl || ''), trackCount: res.data.playlist.trackCount });
+                        const name = res.data.playlist.name || '';
+                        if (/喜欢的音乐|lan0101806/i.test(name)) continue;
+                        plist.push({
+                            id: res.data.playlist.id,
+                            name: res.data.playlist.name,
+                            coverImgUrl: toHttps(res.data.playlist.coverImgUrl || ''),
+                            trackCount: res.data.playlist.trackCount
+                        });
                     }
                 } catch (e) {}
             }
@@ -1455,7 +1517,7 @@ createApp({
             ];
         };
 
-        /* ========== 歌单加载（最初版本：串行 requestWithFallback，稳定） ========== */
+        /* ========== 歌单加载（最初版本，稳定） ========== */
         const fetchPlaylistTracks = async (playlistId, plName, isCustom = false) => {
             searchResults.value = [];
             searchPerformed.value = true;
@@ -1709,6 +1771,7 @@ createApp({
             if (iosConfirm) iosConfirm.onclick = () => { document.getElementById('iosInstallModal').style.display = 'none'; };
         };
 
+        /* ========== 挂载 ========== */
         onMounted(() => {
             loadAllSettings();
             loadCustomFontFromDB();
@@ -1736,6 +1799,7 @@ createApp({
         onUnmounted(() => {
             window.removeEventListener('resize', onWindowResize);
             document.removeEventListener('fullscreenchange', onFullscreenChange);
+            stopKaraokeLoop();
         });
 
         return {
