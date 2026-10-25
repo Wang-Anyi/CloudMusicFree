@@ -1055,37 +1055,12 @@ createApp({
             return p;
         };
 
-        const getSongUrlV1 = async (songId) => {
-            const levels = [...QUALITY_LEVELS];
-            const start = levels.indexOf(qualityLevel.value);
-            if (start > 0) levels.splice(0, start);
-            for (let i = 0; i < API_LIST.length; i++) {
-                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
-                if (!isApiAvailable(apiBase)) continue;
-                for (const lv of levels) {
-                    try {
-                        const url = buildApiUrl(apiBase, `/song/url/v1?id=${songId}&level=${lv}`);
-                        const res = await axios.get(url, { timeout: 15000 });
-                        const musicUrl = (res.data?.data || [])[0]?.url;
-                        if (musicUrl) {
-                            currentApiIndex = (currentApiIndex + i) % API_LIST.length;
-                            markApiOk(apiBase);
-                            return toHttps(musicUrl);
-                        }
-                    } catch (e) {
-                        markApiFailed(apiBase);
-                    }
-                }
-            }
-            return null;
-        };
-
-        const getSongUrlV1ForVip = async (songId) => {
+        const _getSongUrlV1FromList = async (songId, apiList, requireFull) => {
             const levels = [...QUALITY_LEVELS];
             const start = levels.indexOf(qualityLevel.value);
             if (start > 0) levels.splice(0, start);
 
-            for (const apiBase of VIP_API_LIST) {
+            for (const apiBase of apiList) {
                 if (!isApiAvailable(apiBase)) continue;
                 for (const lv of levels) {
                     try {
@@ -1098,17 +1073,35 @@ createApp({
                         const trial = item.freeTrialInfo;
                         const isTrial = !!(trial && typeof trial === 'object' && (trial.start !== undefined || trial.end !== undefined));
 
-                        if (!isTrial) {
-                            markApiOk(apiBase);
-                            return toHttps(musicUrl);
+                        if (requireFull && isTrial) {
+                            markApiFailed(apiBase);
+                            continue;
                         }
-                        markApiFailed(apiBase);
+
+                        markApiOk(apiBase);
+                        return { url: toHttps(musicUrl), isTrial };
                     } catch (e) {
                         markApiFailed(apiBase);
                     }
                 }
             }
             return null;
+        };
+
+        const getSongUrlV1ForVip = async (songId) => {
+            // 第一步：VIP 专用列表，要求完整版
+            const vip = await _getSongUrlV1FromList(songId, VIP_API_LIST, true);
+            if (vip) return vip;
+
+            // 第二步：通用列表，不强制完整版（可能拿到完整版，也可能是试听）
+            const general = await _getSongUrlV1FromList(songId, API_LIST, false);
+            if (general) return general;
+
+            return null;
+        };
+
+        const getSongUrlV1 = async (songId) => {
+            return await _getSongUrlV1FromList(songId, API_LIST, false);
         };
 
         const getSongUrlLegacy = async (songId) => {
@@ -1135,20 +1128,28 @@ createApp({
             let url;
 
             if (isVip) {
-                url = await getSongUrlV1ForVip(songId);
-                if (url) return url;
+                const result = await getSongUrlV1ForVip(songId);
+                if (result) {
+                    if (result.isTrial) {
+                        playErrorMsg.value = '⚠️ VIP 解析失败，正在播放试听片段';
+                        setTimeout(() => { if (playErrorMsg.value.includes('VIP')) playErrorMsg.value = ''; }, 4000);
+                    }
+                    return result.url;
+                }
 
-                url = await getSongUrlV1(songId);
+                // 所有 API 都失败，最后用外链（必为试听）
+                url = await probeOuterUrl(songId, true);
                 if (url) {
-                    playErrorMsg.value = '⚠️ VIP 解析失败，可能只播放试听片段';
+                    playErrorMsg.value = '⚠️ VIP 解析失败，正在播放试听片段';
                     setTimeout(() => { if (playErrorMsg.value.includes('VIP')) playErrorMsg.value = ''; }, 4000);
                     return url;
                 }
-                throw new Error('VIP歌曲解析失败，请确认 Cookie 有效且 VIP API 可用');
+                throw new Error('VIP歌曲解析失败，请确认 Cookie 有效');
             }
 
+            // 免费：原降级链
             url = await probeOuterUrl(songId); if (url) return url;
-            url = await getSongUrlV1(songId); if (url) return url;
+            const v1 = await getSongUrlV1(songId); if (v1) return v1.url;
             url = await getSongUrlLegacy(songId); if (url) return url;
             url = await probeOuterUrl(songId, true); if (url) return url;
             throw new Error('无法获取播放地址');
