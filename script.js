@@ -1,4 +1,4 @@
-document.title = '✅ 云音匣 v5 图片修复';
+document.title = '✅ 云音匣 v6 按ID解析封面';
 
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
@@ -294,8 +294,10 @@ createApp({
         };
         const toHttps = (url) => (url && typeof url === 'string') ? url.replace(/^http:\/\//i, 'https://') : url;
 
-        const weservWrap = (url, size = 200) => {
-            const clean = String(url).replace(/^https?:\/\//i, '');
+        // ✅ 封面代理：统一通过 weserv 加载，规避 Referer 限制
+        const proxyCover = (url, size = 200) => {
+            if (!url || typeof url !== 'string' || !url.startsWith('http')) return '';
+            const clean = url.replace(/^https?:\/\//i, '');
             return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=${size}&h=${size}&fit=cover&output=jpg`;
         };
 
@@ -305,26 +307,48 @@ createApp({
             if (!url) return '';
             if (url.startsWith('//')) url = 'https:' + url;
             if (!/^https?:\/\//i.test(url)) return '';
-            url = url.replace(/^http:\/\//i, 'https://');
-            if (/music\.126\.net/i.test(url) && !/[?&]param=/i.test(url)) {
-                url += (url.includes('?') ? '&' : '?') + 'param=200y200';
+            return url.replace(/^http:\/\//i, 'https://');
+        };
+
+        // ============================================================
+        // ✅ 核心新函数：通过歌曲ID直接解析封面
+        // ============================================================
+        const fetchCoverBySongId = async (songId) => {
+            // 1) 优先请求网易云官方 song/detail 接口，直接拿 album.picUrl
+            try {
+                const officialUrl = `https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`;
+                const res = await axios.get(officialUrl, { timeout: 6000 });
+                const song = res.data?.songs?.[0];
+                const picUrl = song?.album?.picUrl || song?.album?.blurPicUrl;
+                if (picUrl && picUrl.startsWith('http')) {
+                    return proxyCover(fixImageUrl(picUrl), 200);
+                }
+            } catch (e) { /* 官方接口失败，降级 */ }
+
+            // 2) 降级到你现有的第三方 API_LIST
+            for (let i = 0; i < API_LIST.length; i++) {
+                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                try {
+                    const url = `${apiBase}/song/detail?ids=${songId}`;
+                    const res = await axios.get(url, { timeout: 6000 });
+                    const song = res.data?.songs?.[0] || res.data?.data?.[0];
+                    const picUrl = song?.al?.picUrl || song?.album?.picUrl;
+                    if (picUrl && picUrl.startsWith('http')) {
+                        currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                        return proxyCover(fixImageUrl(picUrl), 200);
+                    }
+                } catch (e) {}
             }
-            return url;
+            return '';
         };
 
         const extractCover = (item) => {
             if (!item || typeof item !== 'object') return '';
             const candidates = [];
-            if (item.al && typeof item.al === 'object') {
-                candidates.push(item.al.picUrl, item.al.picUrl_str);
-            }
-            if (item.album && typeof item.album === 'object') {
-                candidates.push(item.album.picUrl, item.album.picUrl_str);
-            }
+            if (item.al && typeof item.al === 'object') candidates.push(item.al.picUrl, item.al.blurPicUrl);
+            if (item.album && typeof item.album === 'object') candidates.push(item.album.picUrl, item.album.blurPicUrl);
             candidates.push(item.pic, item.picUrl, item.cover, item.coverImgUrl, item.img1v1Url);
-            if (Array.isArray(item.ar) && item.ar[0] && typeof item.ar[0] === 'object') {
-                candidates.push(item.ar[0].picUrl);
-            }
+            if (Array.isArray(item.ar) && item.ar[0] && typeof item.ar[0] === 'object') candidates.push(item.ar[0].picUrl);
             if (Array.isArray(item.artists) && item.artists[0] && typeof item.artists[0] === 'object') {
                 candidates.push(item.artists[0].picUrl, item.artists[0].img1v1Url);
             }
@@ -698,137 +722,28 @@ createApp({
             throw lastError || new Error('所有 API 均不可用');
         };
 
-        const imageQueue = [];
-        let activeImageTasks = 0;
-        const MAX_IMAGE_CONCURRENCY = 3;
-
-        const enqueueImageLoad = (songId, albumId) => {
-            imageQueue.push({ songId, albumId });
-            processImageQueue();
-        };
-
-        const processImageQueue = () => {
-            while (imageQueue.length > 0 && activeImageTasks < MAX_IMAGE_CONCURRENCY) {
-                const task = imageQueue.shift();
-                activeImageTasks++;
-                loadSingleImage(task.songId, task.albumId).finally(() => {
-                    activeImageTasks--;
-                    if (imageQueue.length > 0) processImageQueue();
-                });
-            }
-        };
-
-        const applyCoverToSong = (songId, cover) => {
-            const target = searchResults.value.find(s => String(s.id) === String(songId));
-            if (target) {
-                target.picUrl = cover;
-                target.loadingCover = false;
-            }
-            if (currentSongId && String(currentSongId) === String(songId) &&
-                (!currentCover.value || currentCover.value === DEFAULT_COVER)) {
-                currentCover.value = cover;
-                fullscreenCover.value = cover;
-                setDynamicGradient(cover);
-            }
-        };
-
-        const loadSingleImage = async (songId, albumId) => {
-            for (let i = 0; i < Math.min(4, API_LIST.length); i++) {
-                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
-                try {
-                    const url = buildApiUrl(apiBase, `/song/detail?ids=${songId}`);
-                    const res = await axios.get(url, { timeout: 5000 });
-                    const detail =
-                        res.data?.songs?.[0] ||
-                        res.data?.data?.[0] ||
-                        res.data?.result?.songs?.[0] ||
-                        (Array.isArray(res.data) ? res.data[0] : null);
-                    if (detail) {
-                        const cover = extractCover(detail);
-                        if (cover) {
-                            applyCoverToSong(songId, cover);
-                            return true;
-                        }
-                    }
-                } catch (e) {}
-            }
-
-            if (albumId) {
-                for (let i = 0; i < Math.min(4, API_LIST.length); i++) {
-                    const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
-                    try {
-                        const url = buildApiUrl(apiBase, `/album?id=${albumId}`);
-                        const res = await axios.get(url, { timeout: 4000 });
-                        const album =
-                            res.data?.album ||
-                            res.data?.data?.album ||
-                            res.data?.data ||
-                            res.data?.result;
-                        const cover = extractCover(album);
-                        if (cover) {
-                            applyCoverToSong(songId, cover);
-                            return true;
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            const idx = searchResults.value.findIndex(s => s.id === songId);
-            if (idx >= 0) searchResults.value[idx].loadingCover = false;
-            return false;
-        };
-
-        const enrichCoversBatch = async (songs) => {
+        // ============================================================
+        // ✅ 批量获取封面：搜索/歌单加载后，用歌曲ID批量拉取封面
+        // ============================================================
+        const enrichCoversBySongId = async (songs) => {
             if (!songs || !songs.length) return;
-            const needIds = songs
-                .filter(s => !s.picUrl || s.picUrl === DEFAULT_COVER)
-                .map(s => s.id);
-            if (!needIds.length) return;
-
-            const batchSize = 50;
-            for (let i = 0; i < needIds.length; i += batchSize) {
-                const ids = needIds.slice(i, i + batchSize);
-                const idsParam = '[' + ids.join(',') + ']';
-                let detailSongs = null;
-                for (const apiBase of API_LIST) {
-                    try {
-                        const url = `${apiBase}/song/detail?ids=${encodeURIComponent(idsParam)}`;
-                        const res = await axios.get(url, { timeout: 10000 });
-                        const arr = res.data?.songs
-                            || res.data?.data
-                            || (Array.isArray(res.data) ? res.data : null)
-                            || res.data?.result?.songs;
-                        if (Array.isArray(arr) && arr.length) {
-                            detailSongs = arr;
-                            break;
+            const batchSize = 20;
+            for (let i = 0; i < songs.length; i += batchSize) {
+                const batch = songs.slice(i, i + batchSize);
+                await Promise.allSettled(batch.map(async (song) => {
+                    const cover = await fetchCoverBySongId(song.id);
+                    if (cover) {
+                        song.picUrl = cover;
+                        song.loadingCover = false;
+                        // 如果正好是当前播放歌曲，同步更新播放器封面
+                        if (currentSongId && String(currentSongId) === String(song.id)) {
+                            currentCover.value = cover;
+                            fullscreenCover.value = cover;
+                            setDynamicGradient(cover);
                         }
-                    } catch (e) {}
-                }
-                if (!detailSongs) continue;
-                detailSongs.forEach(d => {
-                    const cover = extractCover(d);
-                    if (!cover) return;
-                    const target = songs.find(x => String(x.id) === String(d.id));
-                    if (target && (!target.picUrl || target.picUrl === DEFAULT_COVER)) {
-                        target.picUrl = cover;
-                        target.loadingCover = false;
                     }
-                    if (currentSongId && String(currentSongId) === String(d.id) &&
-                        (!currentCover.value || currentCover.value === DEFAULT_COVER)) {
-                        currentCover.value = cover;
-                        fullscreenCover.value = cover;
-                        setDynamicGradient(cover);
-                    }
-                });
+                }));
             }
-        };
-
-        const loadImagesForResults = (songs) => {
-            songs.forEach(song => {
-                if (!song.picUrl || song.picUrl === DEFAULT_COVER) {
-                    enqueueImageLoad(song.id, song.albumId);
-                }
-            });
         };
 
         const onImageLoad = (event) => {
@@ -852,7 +767,6 @@ createApp({
         const onImageError = (event) => {
             const img = event.target;
             const current = img.src || '';
-
             const hideLoading = () => {
                 const wrapper = img.closest('.cover-wrapper');
                 if (wrapper) {
@@ -860,27 +774,17 @@ createApp({
                     if (loadingDiv) loadingDiv.style.display = 'none';
                 }
             };
-
             if (current === DEFAULT_COVER || current.startsWith('data:image/svg+xml')) {
                 hideLoading();
                 return;
             }
-            if (!current || current.startsWith('data:') || current === window.location.href) {
-                img.src = DEFAULT_COVER;
-                hideLoading();
-                return;
-            }
-
-            if (/music\.126\.net/i.test(current) && img.dataset.triedWeserv !== 'true') {
-                img.dataset.triedWeserv = 'true';
-                img.src = weservWrap(current, 200);
-                return;
-            }
-
             img.src = DEFAULT_COVER;
             hideLoading();
         };
 
+        // ============================================================
+        // ✅ 搜索逻辑重构：搜索结果先占位，封面由 enrichCoversBySongId 通过ID拉取
+        // ============================================================
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -910,6 +814,7 @@ createApp({
                 return;
             }
 
+            // 先构造歌曲列表，封面统一用默认图占位，loadingCover 设为 true
             searchResults.value = songsData.map(item => {
                 const id = item.id || item.song_id;
                 const name = item.name || item.title || '未知';
@@ -917,15 +822,21 @@ createApp({
                 const dur = item.duration || item.dt || 0;
                 const isVip = checkIsVip(item);
                 const albumId = item.album?.id || item.al?.id || item.albumId || null;
-                let picUrl = extractCover(item);
-                const needsCover = !picUrl;
-                if (needsCover) picUrl = DEFAULT_COVER;
-                return { id: String(id), name, artist, duration: dur, picUrl, isVip, albumId, loadingCover: needsCover };
+                return {
+                    id: String(id),
+                    name,
+                    artist,
+                    duration: dur,
+                    picUrl: DEFAULT_COVER,
+                    isVip,
+                    albumId,
+                    loadingCover: true
+                };
             });
             loadingSearch.value = false;
 
-            enrichCoversBatch(searchResults.value);
-            loadImagesForResults(searchResults.value);
+            // ✅ 核心：通过歌曲ID批量拉取封面
+            enrichCoversBySongId(searchResults.value);
         };
 
         const outerUrlCache = new Map();
@@ -1019,9 +930,10 @@ createApp({
                 currentSongName.value = songName || '未知歌曲';
                 currentArtist.value = artistName || '网易云音乐';
 
+                // 封面先用传入的或默认图占位
                 let initialCover = DEFAULT_COVER;
-                if (coverUrl && (coverUrl.startsWith('http') || coverUrl.startsWith('data:')) && !coverUrl.includes('flaticon')) {
-                    initialCover = toHttps(coverUrl);
+                if (coverUrl && coverUrl.startsWith('http')) {
+                    initialCover = coverUrl;
                 }
                 currentCover.value = initialCover;
                 currentIsVip.value = false;
@@ -1047,13 +959,13 @@ createApp({
                 fullscreenCover.value = currentCover.value;
                 if (initialCover !== DEFAULT_COVER) setDynamicGradient(initialCover);
 
+                // ✅ 播放时也通过歌曲ID异步拉取封面，确保播放器界面有图
                 if (initialCover === DEFAULT_COVER) {
-                    getSongDetail(songId).then(detail => {
-                        const c = extractCover(detail);
-                        if (c && currentSongId === songId) {
-                            currentCover.value = c;
-                            fullscreenCover.value = c;
-                            setDynamicGradient(c);
+                    fetchCoverBySongId(songId).then(cover => {
+                        if (cover && currentSongId === songId) {
+                            currentCover.value = cover;
+                            fullscreenCover.value = cover;
+                            setDynamicGradient(cover);
                         }
                     }).catch(() => {});
                 }
@@ -1147,12 +1059,6 @@ createApp({
                 const detail = await getSongDetail(songId);
                 if (currentSongId === songId) {
                     currentAlbum.value = detail?.al?.name || detail?.album?.name || '';
-                    const c = extractCover(detail);
-                    if (c && (!currentCover.value || currentCover.value === DEFAULT_COVER)) {
-                        currentCover.value = c;
-                        fullscreenCover.value = c;
-                        setDynamicGradient(c);
-                    }
                 }
             } catch (e) {}
         };
@@ -1730,16 +1636,15 @@ createApp({
 
                 if (rawSongs && rawSongs.length) {
                     const songList = rawSongs.map(track => {
-                        const cover = extractCover(track);
                         return {
                             id: String(track.id),
                             name: track.name || '未知',
                             artist: (track.ar || track.artists || []).map(a => a.name || a).join('/') || '未知',
                             duration: track.dt || track.duration || 0,
-                            picUrl: cover || DEFAULT_COVER,
+                            picUrl: DEFAULT_COVER,
                             isVip: checkIsVip(track),
                             albumId: track.album?.id || track.al?.id || track.albumId || null,
-                            loadingCover: !cover
+                            loadingCover: true
                         };
                     });
                     searchResults.value = songList;
@@ -1749,7 +1654,8 @@ createApp({
                         currentQueueIndex = -1;
                         playErrorMsg.value += ' · 已加入播放队列';
                     }
-                    enrichCoversBatch(songList);
+                    // ✅ 歌单封面也通过歌曲ID批量拉取
+                    enrichCoversBySongId(songList);
                     setTimeout(() => { if (playErrorMsg.value.includes('已加载歌单')) playErrorMsg.value = ''; }, 3000);
                 } else {
                     searchResults.value = [];
@@ -1861,7 +1767,8 @@ createApp({
             try {
                 const detail = await getSongDetail(id);
                 const isVip = checkIsVip(detail);
-                const cover = extractCover(detail);
+                // ✅ 按ID解析封面
+                const cover = await fetchCoverBySongId(id);
                 const song = { id: String(detail.id), name: detail.name, artist: (detail.ar || []).map(a => a.name).join('/'), picUrl: cover || DEFAULT_COVER, isVip };
                 if (isVip && !userCookie.value.trim()) showVipModal(song);
                 else playSongById(song.id, song.name, song.artist, song.picUrl);
@@ -1909,6 +1816,7 @@ createApp({
                 navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW注册失败', e));
             }
 
+            // 双保险：修正 referrerpolicy
             const fixReferrer = () => {
                 document.querySelectorAll('img[referrerpolicy="no-referrer"]').forEach(img => {
                     img.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
