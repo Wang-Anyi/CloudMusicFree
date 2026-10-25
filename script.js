@@ -1,10 +1,12 @@
+document.title = '✅ 云音匣 v3 图片修复';
+
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
+// 红色 ♪ 默认封面：不依赖任何外部资源，用于验证代码是否生效
 const DEFAULT_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">' +
-    '<rect width="200" height="200" fill="#e8e0d5"/>' +
-    '<circle cx="100" cy="80" r="30" fill="#b8a090"/>' +
-    '<path d="M40 180 Q100 120 160 180 L160 200 L40 200 Z" fill="#b8a090"/>' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
+    '<rect width="200" height="200" fill="#ff6b6b"/>' +
+    '<text x="100" y="140" font-size="120" text-anchor="middle" fill="#ffffff">♪</text>' +
     '</svg>'
 );
 
@@ -297,8 +299,8 @@ createApp({
             if (!url || typeof url !== 'string') return '';
             url = url.trim();
             if (!url) return '';
-            if (!/^(https?:)?\/\//i.test(url)) return '';
             if (url.startsWith('//')) url = 'https:' + url;
+            if (!/^https?:\/\//i.test(url)) return '';
             url = url.replace(/^http:\/\//i, 'https://');
             if (/music\.126\.net/i.test(url) && !/[?&]param=/i.test(url)) {
                 url += (url.includes('?') ? '&' : '?') + 'param=200y200';
@@ -772,7 +774,6 @@ createApp({
             return false;
         };
 
-        // 批量拉取歌曲封面（对没有封面的歌一次性补全）
         const enrichCoversBatch = async (songs) => {
             if (!songs || !songs.length) return;
             const needIds = songs
@@ -841,7 +842,6 @@ createApp({
             const current = img.src || '';
             const stage = parseInt(img.dataset.imgStage || '0', 10);
 
-            // 已经是默认 SVG 图，或 data URI，不再处理
             if (current === DEFAULT_COVER || current.startsWith('data:image/svg+xml')) {
                 const wrapper = img.closest('.cover-wrapper');
                 if (wrapper) {
@@ -851,13 +851,11 @@ createApp({
                 return;
             }
 
-            // 空地址，直接默认图
             if (!current || current.startsWith('data:') || current.startsWith('blob:') || current === window.location.href) {
                 img.src = DEFAULT_COVER;
                 return;
             }
 
-            // Stage 0 → 更换网易云图片 CDN 子域（p1 → p2 → p3 → p4 → m8 → m9）
             if (stage === 0 && /music\.126\.net/i.test(current)) {
                 const hosts = ['p1', 'p2', 'p3', 'p4', 'm8', 'm9'];
                 const m = current.match(/\/\/([a-z0-9]+)\.music\.126\.net/i);
@@ -870,7 +868,6 @@ createApp({
                 }
             }
 
-            // Stage 1（或非网易云 CDN）→ weserv 代理
             if (stage <= 1) {
                 img.dataset.imgStage = '2';
                 const clean = current.replace(/^https?:\/\//i, '');
@@ -878,7 +875,6 @@ createApp({
                 return;
             }
 
-            // Stage 2 失败 → 重新触发一次详情接口拿封面
             const songId = img.dataset.id;
             const song = searchResults.value.find(s => String(s.id) === String(songId));
             if (songId && song && img.dataset.detailTried !== 'true') {
@@ -888,7 +884,6 @@ createApp({
                 return;
             }
 
-            // 最终兜底
             img.src = DEFAULT_COVER;
             const wrapper = img.closest('.cover-wrapper');
             if (wrapper) {
@@ -940,7 +935,6 @@ createApp({
             });
             loadingSearch.value = false;
 
-            // 异步批量补全封面（一次批量拉 50 首详情，比逐首快很多）
             enrichCoversBatch(searchResults.value);
             loadImagesForResults(searchResults.value);
         };
@@ -1036,7 +1030,6 @@ createApp({
                 currentSongName.value = songName || '未知歌曲';
                 currentArtist.value = artistName || '网易云音乐';
 
-                // 如果传入的封面是默认图/空，先用默认图占位，异步拉真实封面
                 let initialCover = DEFAULT_COVER;
                 if (coverUrl && (coverUrl.startsWith('http') || coverUrl.startsWith('data:')) && !coverUrl.includes('flaticon')) {
                     initialCover = toHttps(coverUrl);
@@ -1065,7 +1058,6 @@ createApp({
                 fullscreenCover.value = currentCover.value;
                 if (initialCover !== DEFAULT_COVER) setDynamicGradient(initialCover);
 
-                // 异步拉封面（不管初始是否有，都做一次兜底，防止搜索层没拿全）
                 if (initialCover === DEFAULT_COVER) {
                     getSongDetail(songId).then(detail => {
                         const c = extractCover(detail);
@@ -1914,6 +1906,31 @@ createApp({
             const iosConfirm = document.getElementById('confirmIosInstallBtn');
             if (iosConfirm) iosConfirm.onclick = () => { document.getElementById('iosInstallModal').style.display = 'none'; };
         };
+
+        // 5 秒兜底：搜索结果封面如果还没加载完，强制切默认图
+        watch(searchResults, (list) => {
+            if (!list || !list.length) return;
+            setTimeout(() => {
+                document.querySelectorAll('.song-cover').forEach(img => {
+                    if (img.dataset.fallbackDone === 'true') return;
+                    if (!img.complete || img.naturalWidth === 0) {
+                        img.dataset.fallbackDone = 'true';
+                        img.src = DEFAULT_COVER;
+                    }
+                });
+            }, 5000);
+        }, { deep: true });
+
+        // 5 秒兜底：播放器大图如果还没加载完，强制切默认图
+        watch(currentCover, (url) => {
+            if (!url) return;
+            setTimeout(() => {
+                const img = document.querySelector('.cover-large');
+                if (img && (!img.complete || img.naturalWidth === 0)) {
+                    img.src = DEFAULT_COVER;
+                }
+            }, 5000);
+        });
 
         onMounted(() => {
             loadAllSettings();
