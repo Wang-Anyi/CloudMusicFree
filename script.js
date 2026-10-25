@@ -288,6 +288,10 @@ createApp({
         };
 
         const API_LIST = [
+            // ✅ 新增优先尝试（格式兼容）
+            'https://netease-cloud-music-api-five-roan-88.vercel.app',
+            'https://music-api.heheda.top',
+            // ✅ 原有列表，原样保留
             'https://meting-api-pi-one.vercel.app',
             'https://api-enhanced-delta-six.vercel.app',
             'https://api.liyefeng.top',
