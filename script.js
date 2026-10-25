@@ -1,8 +1,17 @@
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
+const DEFAULT_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">' +
+    '<rect width="200" height="200" fill="#e8e0d5"/>' +
+    '<circle cx="100" cy="80" r="30" fill="#b8a090"/>' +
+    '<path d="M40 180 Q100 120 160 180 L160 200 L40 200 Z" fill="#b8a090"/>' +
+    '</svg>'
+);
+
 const gradientColorCache = new Map();
 
 const extractColorFromImage = (url) => {
+    if (!url || !url.startsWith('http')) return Promise.resolve(null);
     if (gradientColorCache.has(url)) return Promise.resolve(gradientColorCache.get(url));
     return new Promise((resolve) => {
         const img = new Image();
@@ -282,33 +291,42 @@ createApp({
             const secs = Math.floor(seconds % 60);
             return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
         };
-        const toHttps = (url) => url ? url.replace(/^http:\/\//i, 'https://') : url;
+        const toHttps = (url) => (url && typeof url === 'string') ? url.replace(/^http:\/\//i, 'https://') : url;
 
         const fixImageUrl = (url) => {
-            if (!url) return url;
-            url = String(url).replace(/^http:\/\//i, 'https://');
-            if (/music\.126\.net/i.test(url)) {
-                if (!/[?&]param=/i.test(url)) {
-                    url += (url.includes('?') ? '&' : '?') + 'param=500y500';
-                }
+            if (!url || typeof url !== 'string') return '';
+            url = url.trim();
+            if (!url) return '';
+            if (!/^(https?:)?\/\//i.test(url)) return '';
+            if (url.startsWith('//')) url = 'https:' + url;
+            url = url.replace(/^http:\/\//i, 'https://');
+            if (/music\.126\.net/i.test(url) && !/[?&]param=/i.test(url)) {
+                url += (url.includes('?') ? '&' : '?') + 'param=200y200';
             }
             return url;
         };
 
         const extractCover = (item) => {
-            if (!item) return '';
-            let raw = '';
-            if (item.al && item.al.picUrl) raw = item.al.picUrl;
-            else if (item.album && typeof item.album === 'object' && item.album.picUrl) raw = item.album.picUrl;
-            else if (item.pic) raw = item.pic;
-            else if (item.picUrl) raw = item.picUrl;
-            else if (item.cover) raw = item.cover;
-            else if (item.coverImgUrl) raw = item.coverImgUrl;
-            else if (item.img1v1Url) raw = item.img1v1Url;
-            else if (item.ar && item.ar[0] && item.ar[0].picUrl) raw = item.ar[0].picUrl;
-            else if (item.artists && item.artists[0] && item.artists[0].img1v1Url) raw = item.artists[0].img1v1Url;
-            else if (item.album && item.album.artist && item.album.artist.img1v1Url) raw = item.album.artist.img1v1Url;
-            return fixImageUrl(raw);
+            if (!item || typeof item !== 'object') return '';
+            const candidates = [];
+            if (item.al && typeof item.al === 'object') {
+                candidates.push(item.al.picUrl, item.al.picUrl_str);
+            }
+            if (item.album && typeof item.album === 'object') {
+                candidates.push(item.album.picUrl, item.album.picUrl_str);
+            }
+            candidates.push(item.pic, item.picUrl, item.cover, item.coverImgUrl, item.img1v1Url);
+            if (Array.isArray(item.ar) && item.ar[0] && typeof item.ar[0] === 'object') {
+                candidates.push(item.ar[0].picUrl);
+            }
+            if (Array.isArray(item.artists) && item.artists[0] && typeof item.artists[0] === 'object') {
+                candidates.push(item.artists[0].picUrl, item.artists[0].img1v1Url);
+            }
+            for (const c of candidates) {
+                const fixed = fixImageUrl(c);
+                if (fixed && /^https:\/\//i.test(fixed)) return fixed;
+            }
+            return '';
         };
 
         const checkIsVip = (item) => {
@@ -694,15 +712,21 @@ createApp({
             }
         };
 
-        const loadSingleImage = async (songId, albumId) => {
-            const applyCover = (cover) => {
-                const idx = searchResults.value.findIndex(s => s.id === songId);
-                if (idx >= 0) {
-                    searchResults.value[idx].picUrl = cover;
-                    searchResults.value[idx].loadingCover = false;
-                }
-            };
+        const applyCoverToSong = (songId, cover) => {
+            const target = searchResults.value.find(s => String(s.id) === String(songId));
+            if (target) {
+                target.picUrl = cover;
+                target.loadingCover = false;
+            }
+            if (currentSongId && String(currentSongId) === String(songId) &&
+                (!currentCover.value || currentCover.value === DEFAULT_COVER || currentCover.value.includes('flaticon'))) {
+                currentCover.value = cover;
+                fullscreenCover.value = cover;
+                setDynamicGradient(cover);
+            }
+        };
 
+        const loadSingleImage = async (songId, albumId) => {
             for (let i = 0; i < Math.min(4, API_LIST.length); i++) {
                 const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
                 try {
@@ -711,11 +735,12 @@ createApp({
                     const detail =
                         res.data?.songs?.[0] ||
                         res.data?.data?.[0] ||
-                        res.data?.result?.songs?.[0];
+                        res.data?.result?.songs?.[0] ||
+                        (Array.isArray(res.data) ? res.data[0] : null);
                     if (detail) {
                         const cover = extractCover(detail);
-                        if (cover && !cover.includes('flaticon')) {
-                            applyCover(cover);
+                        if (cover) {
+                            applyCoverToSong(songId, cover);
                             return true;
                         }
                     }
@@ -734,8 +759,8 @@ createApp({
                             res.data?.data ||
                             res.data?.result;
                         const cover = extractCover(album);
-                        if (cover && !cover.includes('flaticon')) {
-                            applyCover(cover);
+                        if (cover) {
+                            applyCoverToSong(songId, cover);
                             return true;
                         }
                     } catch (e) {}
@@ -747,10 +772,55 @@ createApp({
             return false;
         };
 
+        // 批量拉取歌曲封面（对没有封面的歌一次性补全）
+        const enrichCoversBatch = async (songs) => {
+            if (!songs || !songs.length) return;
+            const needIds = songs
+                .filter(s => !s.picUrl || s.picUrl === DEFAULT_COVER || s.picUrl.includes('flaticon'))
+                .map(s => s.id);
+            if (!needIds.length) return;
+
+            const batchSize = 50;
+            for (let i = 0; i < needIds.length; i += batchSize) {
+                const ids = needIds.slice(i, i + batchSize);
+                const idsParam = '[' + ids.join(',') + ']';
+                let detailSongs = null;
+                for (const apiBase of API_LIST) {
+                    try {
+                        const url = `${apiBase}/song/detail?ids=${encodeURIComponent(idsParam)}`;
+                        const res = await axios.get(url, { timeout: 10000 });
+                        const arr = res.data?.songs
+                            || res.data?.data
+                            || (Array.isArray(res.data) ? res.data : null)
+                            || res.data?.result?.songs;
+                        if (Array.isArray(arr) && arr.length) {
+                            detailSongs = arr;
+                            break;
+                        }
+                    } catch (e) {}
+                }
+                if (!detailSongs) continue;
+                detailSongs.forEach(d => {
+                    const cover = extractCover(d);
+                    if (!cover) return;
+                    const target = songs.find(x => String(x.id) === String(d.id));
+                    if (target && (!target.picUrl || target.picUrl === DEFAULT_COVER || target.picUrl.includes('flaticon'))) {
+                        target.picUrl = cover;
+                        target.loadingCover = false;
+                    }
+                    if (currentSongId && String(currentSongId) === String(d.id) &&
+                        (!currentCover.value || currentCover.value === DEFAULT_COVER || currentCover.value.includes('flaticon'))) {
+                        currentCover.value = cover;
+                        fullscreenCover.value = cover;
+                        setDynamicGradient(cover);
+                    }
+                });
+            }
+        };
+
         const loadImagesForResults = (songs) => {
-            const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             songs.forEach(song => {
-                if (!song.picUrl || song.picUrl === defaultCover || song.picUrl.includes('flaticon')) {
+                if (!song.picUrl || song.picUrl === DEFAULT_COVER || song.picUrl.includes('flaticon')) {
                     enqueueImageLoad(song.id, song.albumId);
                 }
             });
@@ -768,11 +838,11 @@ createApp({
 
         const onImageError = (event) => {
             const img = event.target;
-            const DEFAULT = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             const current = img.src || '';
-            const stage = img.dataset.imgStage || '0';
+            const stage = parseInt(img.dataset.imgStage || '0', 10);
 
-            if (current === DEFAULT || current.includes('cdn-icons-png.flaticon.com')) {
+            // 已经是默认 SVG 图，或 data URI，不再处理
+            if (current === DEFAULT_COVER || current.startsWith('data:image/svg+xml')) {
                 const wrapper = img.closest('.cover-wrapper');
                 if (wrapper) {
                     const loadingDiv = wrapper.querySelector('.cover-loading');
@@ -781,33 +851,45 @@ createApp({
                 return;
             }
 
-            if (stage === '0') {
-                if (/music\.126\.net/i.test(current)) {
+            // 空地址，直接默认图
+            if (!current || current.startsWith('data:') || current.startsWith('blob:') || current === window.location.href) {
+                img.src = DEFAULT_COVER;
+                return;
+            }
+
+            // Stage 0 → 更换网易云图片 CDN 子域（p1 → p2 → p3 → p4 → m8 → m9）
+            if (stage === 0 && /music\.126\.net/i.test(current)) {
+                const hosts = ['p1', 'p2', 'p3', 'p4', 'm8', 'm9'];
+                const m = current.match(/\/\/([a-z0-9]+)\.music\.126\.net/i);
+                const curHost = m ? m[1] : '';
+                const idx = hosts.indexOf(curHost);
+                if (idx >= 0 && idx < hosts.length - 1) {
                     img.dataset.imgStage = '1';
-                    const sep = current.includes('?') ? '&' : '?';
-                    if (!/[?&]param=/i.test(current)) {
-                        img.src = current + sep + 'param=200y200';
-                        return;
-                    }
+                    img.src = current.replace(/\/\/[a-z0-9]+\.music\.126\.net/i, `//${hosts[idx + 1]}.music.126.net`);
+                    return;
                 }
+            }
+
+            // Stage 1（或非网易云 CDN）→ weserv 代理
+            if (stage <= 1) {
                 img.dataset.imgStage = '2';
-                img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(current.replace(/^https?:\/\//i, ''));
+                const clean = current.replace(/^https?:\/\//i, '');
+                img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(clean) + '&w=200&h=200&fit=cover&output=jpg';
                 return;
             }
 
-            if (stage === '1') {
-                img.dataset.imgStage = '2';
-                img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(current.replace(/^https?:\/\//i, ''));
-                return;
-            }
-
+            // Stage 2 失败 → 重新触发一次详情接口拿封面
             const songId = img.dataset.id;
-            const song = searchResults.value.find(s => s.id === songId);
+            const song = searchResults.value.find(s => String(s.id) === String(songId));
             if (songId && song && img.dataset.detailTried !== 'true') {
                 img.dataset.detailTried = 'true';
                 enqueueImageLoad(songId, song.albumId);
+                img.src = DEFAULT_COVER;
+                return;
             }
-            img.src = DEFAULT;
+
+            // 最终兜底
+            img.src = DEFAULT_COVER;
             const wrapper = img.closest('.cover-wrapper');
             if (wrapper) {
                 const loadingDiv = wrapper.querySelector('.cover-loading');
@@ -844,7 +926,6 @@ createApp({
                 return;
             }
 
-            const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             searchResults.value = songsData.map(item => {
                 const id = item.id || item.song_id;
                 const name = item.name || item.title || '未知';
@@ -853,12 +934,14 @@ createApp({
                 const isVip = checkIsVip(item);
                 const albumId = item.album?.id || item.al?.id || item.albumId || null;
                 let picUrl = extractCover(item);
-                const needsCover = !picUrl || picUrl.includes('flaticon');
-                if (needsCover) picUrl = defaultCover;
+                const needsCover = !picUrl;
+                if (needsCover) picUrl = DEFAULT_COVER;
                 return { id: String(id), name, artist, duration: dur, picUrl, isVip, albumId, loadingCover: needsCover };
             });
             loadingSearch.value = false;
 
+            // 异步批量补全封面（一次批量拉 50 首详情，比逐首快很多）
+            enrichCoversBatch(searchResults.value);
             loadImagesForResults(searchResults.value);
         };
 
@@ -933,7 +1016,11 @@ createApp({
                 try {
                     const url = buildApiUrl(apiBase, `/song/detail?ids=${songId}`);
                     const res = await axios.get(url, { timeout: 8000 });
-                    const detail = res.data?.songs?.[0] || res.data?.data?.[0];
+                    const detail =
+                        res.data?.songs?.[0] ||
+                        res.data?.data?.[0] ||
+                        res.data?.result?.songs?.[0] ||
+                        (Array.isArray(res.data) ? res.data[0] : null);
                     if (detail) return detail;
                 } catch (err) {}
             }
@@ -948,7 +1035,13 @@ createApp({
                 const musicUrl = await getSongUrl(songId);
                 currentSongName.value = songName || '未知歌曲';
                 currentArtist.value = artistName || '网易云音乐';
-                currentCover.value = coverUrl && coverUrl.startsWith('http') ? toHttps(coverUrl) : 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
+
+                // 如果传入的封面是默认图/空，先用默认图占位，异步拉真实封面
+                let initialCover = DEFAULT_COVER;
+                if (coverUrl && (coverUrl.startsWith('http') || coverUrl.startsWith('data:')) && !coverUrl.includes('flaticon')) {
+                    initialCover = toHttps(coverUrl);
+                }
+                currentCover.value = initialCover;
                 currentIsVip.value = false;
                 currentSongId = songId;
                 currentSongArtist = currentArtist.value;
@@ -970,7 +1063,20 @@ createApp({
                 fullscreenSongName.value = currentSongName.value;
                 fullscreenArtist.value = currentArtist.value;
                 fullscreenCover.value = currentCover.value;
-                setDynamicGradient(currentCover.value);
+                if (initialCover !== DEFAULT_COVER) setDynamicGradient(initialCover);
+
+                // 异步拉封面（不管初始是否有，都做一次兜底，防止搜索层没拿全）
+                if (initialCover === DEFAULT_COVER) {
+                    getSongDetail(songId).then(detail => {
+                        const c = extractCover(detail);
+                        if (c && currentSongId === songId) {
+                            currentCover.value = c;
+                            fullscreenCover.value = c;
+                            setDynamicGradient(c);
+                        }
+                    }).catch(() => {});
+                }
+
                 const audio = audioPlayer.value;
                 if (audio) {
                     audio.pause();
@@ -1060,6 +1166,12 @@ createApp({
                 const detail = await getSongDetail(songId);
                 if (currentSongId === songId) {
                     currentAlbum.value = detail?.al?.name || detail?.album?.name || '';
+                    const c = extractCover(detail);
+                    if (c && (!currentCover.value || currentCover.value === DEFAULT_COVER || currentCover.value.includes('flaticon'))) {
+                        currentCover.value = c;
+                        fullscreenCover.value = c;
+                        setDynamicGradient(c);
+                    }
                 }
             } catch (e) {}
         };
@@ -1121,7 +1233,7 @@ createApp({
                 playErrorMsg.value = '⏳ 正在获取封面...';
                 let coverBuffer = null;
                 let coverMime = 'image/jpeg';
-                const coverUrl = toHttps(songDetail?.al?.picUrl || currentCover.value || '');
+                const coverUrl = toHttps(songDetail?.al?.picUrl || (currentCover.value && currentCover.value.startsWith('http') ? currentCover.value : ''));
                 if (coverUrl && !coverUrl.includes('flaticon')) {
                     try {
                         const ir = await fetch(coverUrl, { mode: 'cors' });
@@ -1282,6 +1394,7 @@ createApp({
                     fullscreenProgressValue.value = (a.currentTime / a.duration) * 100;
                     fullscreenIsPlaying.value = !a.paused;
                     if (currentLyricIndex.value !== fullscreenLyricIndex.value) fullscreenLyricIndex.value = currentLyricIndex.value;
+                    if (fullscreenCover.value !== currentCover.value) fullscreenCover.value = currentCover.value;
                 }
             }, 200);
             nextTick(() => {
@@ -1344,7 +1457,7 @@ createApp({
             localStorage.removeItem('customBgImage');
             applyBgImage();
             document.body.classList.remove('custom-bg');
-            if (currentCover.value) setDynamicGradient(currentCover.value);
+            if (currentCover.value && currentCover.value.startsWith('http')) setDynamicGradient(currentCover.value);
             playErrorMsg.value = '✅ 已恢复主题背景';
             setTimeout(() => { if (playErrorMsg.value.includes('主题背景')) playErrorMsg.value = ''; }, 2000);
         };
@@ -1546,7 +1659,7 @@ createApp({
                 } catch (e) {}
             }
             recommendPlaylists.value = plist.length ? plist : [
-                { id: '3778678', name: '热歌榜', coverImgUrl: 'https://picsum.photos/80/80?random=1', trackCount: 100 }
+                { id: '3778678', name: '热歌榜', coverImgUrl: DEFAULT_COVER, trackCount: 100 }
             ];
         };
 
@@ -1555,7 +1668,6 @@ createApp({
             searchPerformed.value = true;
             loadingSearch.value = true;
 
-            const defaultCover = 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
             const cookieParam = userCookie.value.trim() ? `&cookie=${encodeURIComponent(userCookie.value)}` : '';
 
             const tryRequest = async (path) => {
@@ -1637,16 +1749,16 @@ createApp({
 
                 if (rawSongs && rawSongs.length) {
                     const songList = rawSongs.map(track => {
-                        let picUrl = extractCover(track) || defaultCover;
+                        const cover = extractCover(track);
                         return {
                             id: String(track.id),
                             name: track.name || '未知',
                             artist: (track.ar || track.artists || []).map(a => a.name || a).join('/') || '未知',
                             duration: track.dt || track.duration || 0,
-                            picUrl,
+                            picUrl: cover || DEFAULT_COVER,
                             isVip: checkIsVip(track),
-                            albumId: track.album?.id || track.al?.id || null,
-                            loadingCover: false
+                            albumId: track.album?.id || track.al?.id || track.albumId || null,
+                            loadingCover: !cover
                         };
                     });
                     searchResults.value = songList;
@@ -1656,6 +1768,7 @@ createApp({
                         currentQueueIndex = -1;
                         playErrorMsg.value += ' · 已加入播放队列';
                     }
+                    enrichCoversBatch(songList);
                     setTimeout(() => { if (playErrorMsg.value.includes('已加载歌单')) playErrorMsg.value = ''; }, 3000);
                 } else {
                     searchResults.value = [];
@@ -1767,8 +1880,8 @@ createApp({
             try {
                 const detail = await getSongDetail(id);
                 const isVip = checkIsVip(detail);
-                let picUrl = extractCover(detail) || 'https://cdn-icons-png.flaticon.com/512/727/727245.png';
-                const song = { id: String(detail.id), name: detail.name, artist: (detail.ar || []).map(a => a.name).join('/'), picUrl, isVip };
+                const cover = extractCover(detail);
+                const song = { id: String(detail.id), name: detail.name, artist: (detail.ar || []).map(a => a.name).join('/'), picUrl: cover || DEFAULT_COVER, isVip };
                 if (isVip && !userCookie.value.trim()) showVipModal(song);
                 else playSongById(song.id, song.name, song.artist, song.picUrl);
             } catch (err) { playErrorMsg.value = '获取歌曲信息失败，请检查ID'; }
