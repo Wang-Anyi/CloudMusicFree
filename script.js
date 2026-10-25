@@ -1,12 +1,8 @@
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
-/* 默认封面：内联灰色人像 SVG，颜色加深，确保可见（不是白色） */
+/* 透明占位：加载中什么都不显示，让卡片背景透出来 */
 const DEFAULT_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
-    '<rect width="200" height="200" fill="#d8d8d8"/>' +
-    '<circle cx="100" cy="72" r="32" fill="#8a8a8a"/>' +
-    '<path d="M36 184 Q100 116 164 184 L164 200 L36 200 Z" fill="#8a8a8a"/>' +
-    '</svg>'
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"></svg>'
 );
 
 const gradientColorCache = new Map();
@@ -295,7 +291,7 @@ createApp({
         const toHttps = (url) => (url && typeof url === 'string') ? url.replace(/^http:\/\//i, 'https://') : url;
 
         /* ============================================================
-           封面工具：统一走 weserv 代理（绕开网易云 Referer 限制）
+           封面工具：统一走 weserv 代理
            ============================================================ */
         const fixImageUrl = (url) => {
             if (!url || typeof url !== 'string') return '';
@@ -315,8 +311,8 @@ createApp({
 
         /* ============================================================
            ✅ 核心：按歌曲 ID 解析封面
-           官方接口 + 前 4 个第三方 API 并发，6 秒超时（恢复原超时）
-           谁先返回有效 URL 就用谁，结果 Promise 缓存
+           官方 + 前 4 个 API 并发，无超时（timeout: 0）
+           Promise.any：谁先返回用谁，全都失败才落空
            ============================================================ */
         const coverPromiseCache = new Map();
 
@@ -327,9 +323,9 @@ createApp({
             const promise = (async () => {
                 const tasks = [];
 
-                // 网易云官方接口
+                // 网易云官方接口（无超时）
                 tasks.push(
-                    axios.get(`https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`, { timeout: 6000 })
+                    axios.get(`https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`, { timeout: 0 })
                         .then(r => {
                             const s = r.data?.songs?.[0];
                             return s?.album?.picUrl || s?.album?.blurPicUrl || '';
@@ -337,11 +333,11 @@ createApp({
                         .catch(() => '')
                 );
 
-                // 前 4 个第三方 API 并发
+                // 前 4 个第三方 API 并发（无超时）
                 for (let i = 0; i < Math.min(4, API_LIST.length); i++) {
                     const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
                     tasks.push(
-                        axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 6000 })
+                        axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 0 })
                             .then(r => {
                                 const s = r.data?.songs?.[0] || r.data?.data?.[0];
                                 return s?.al?.picUrl || s?.album?.picUrl || '';
@@ -363,7 +359,11 @@ createApp({
                     rawUrl = '';
                 }
 
-                if (!rawUrl) return '';
+                if (!rawUrl) {
+                    // 全部失败，不缓存，允许下次重试
+                    coverPromiseCache.delete(key);
+                    return '';
+                }
                 return proxyCover(rawUrl, size);
             })();
 
@@ -372,7 +372,7 @@ createApp({
         };
 
         /* ============================================================
-           批量补封面：所有没有封面的歌按 ID 拉取，并发 8
+           批量补封面：并发 8 个，谁先回来就谁先替换
            ============================================================ */
         const enrichCoversBySongId = async (songs) => {
             if (!songs || !songs.length) return;
@@ -386,15 +386,14 @@ createApp({
                     const cover = await fetchCoverBySongId(song.id, 200);
                     if (cover) {
                         song.picUrl = cover;
-                        song.loadingCover = false;
                         song.needFetchCover = false;
                         if (currentSongId && String(currentSongId) === String(song.id)) {
                             currentCover.value = cover;
                             fullscreenCover.value = cover;
                         }
                     } else {
-                        song.loadingCover = false;
-                        song.needFetchCover = false;
+                        // 没拿到，保留透明占位，下次能再试（不删 needFetchCover，可以换下次搜索重试）
+                        song.needFetchCover = true;
                     }
                 }));
             }
@@ -795,7 +794,7 @@ createApp({
         };
 
         /* ============================================================
-           搜索：搜索结果统一用默认图占位，然后全部按 ID 拉封面
+           搜索：搜索结果用透明占位，全部按 ID 拉封面
            ============================================================ */
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
@@ -838,13 +837,13 @@ createApp({
                     id, name, artist, duration: dur,
                     picUrl: DEFAULT_COVER,
                     isVip, albumId,
-                    loadingCover: true,
+                    loadingCover: false,
                     needFetchCover: true
                 };
             });
             loadingSearch.value = false;
 
-            // 全部按 ID 拉封面
+            // 全部按 ID 拉封面，谁先回来谁先替换
             enrichCoversBySongId(searchResults.value);
         };
 
@@ -939,6 +938,7 @@ createApp({
                 currentSongName.value = songName || '未知歌曲';
                 currentArtist.value = artistName || '网易云音乐';
 
+                // 传入的封面如果是 weserv 代理或有效 http 地址，先用它
                 let initialCover = DEFAULT_COVER;
                 if (coverUrl && coverUrl.startsWith('http') && coverUrl !== DEFAULT_COVER) {
                     initialCover = coverUrl;
@@ -967,6 +967,7 @@ createApp({
                 fullscreenCover.value = currentCover.value;
                 if (initialCover !== DEFAULT_COVER) setDynamicGradient(initialCover);
 
+                // 没有真实封面时，用 ID 拉高清 500
                 if (initialCover === DEFAULT_COVER) {
                     fetchCoverBySongId(songId, 500).then(cover => {
                         if (cover && currentSongId === songId) {
@@ -1651,7 +1652,7 @@ createApp({
                             picUrl: DEFAULT_COVER,
                             isVip: checkIsVip(track),
                             albumId: track.album?.id || track.al?.id || track.albumId || null,
-                            loadingCover: true,
+                            loadingCover: false,
                             needFetchCover: true
                         };
                     });
