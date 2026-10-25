@@ -1,6 +1,6 @@
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
-/* 透明占位：加载中什么都不显示，让卡片背景透出来 */
+/* 透明占位 */
 const DEFAULT_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"></svg>'
 );
@@ -125,6 +125,9 @@ createApp({
         const isFullscreen = ref(false);
         const autoFullscreenOnEnter = ref(localStorage.getItem('autoFullscreenOnEnter') === 'true');
 
+        /* ✅ 新增：移动端布局状态 */
+        const isMobileView = ref(false);
+
         const userCookie = ref('');
 
         const QUALITY_LEVELS = ['lossless', 'exhigh', 'higher', 'standard'];
@@ -177,6 +180,22 @@ createApp({
             }
         };
 
+        /* ✅ 新增：判断是否使用移动端布局 */
+        const checkMobileView = () => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            let mobile;
+            if (orientationMode.value === 'portrait') {
+                mobile = true;
+            } else if (orientationMode.value === 'landscape') {
+                mobile = false;
+            } else {
+                mobile = w <= 768 || (h > w && w <= 1024);
+            }
+            isMobileView.value = mobile;
+            document.body.classList.toggle('mobile-view', mobile);
+        };
+
         const toggleFullscreen = async () => {
             try {
                 if (document.fullscreenElement) await document.exitFullscreen();
@@ -192,16 +211,18 @@ createApp({
             localStorage.setItem('orientationMode', mode);
             if (mode === 'auto') {
                 try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
-                playErrorMsg.value = '✅ 方向已恢复自动';
-                setTimeout(() => { if (playErrorMsg.value.includes('方向')) playErrorMsg.value = ''; }, 2000);
+                checkMobileView();
+                playErrorMsg.value = '✅ 已恢复自动布局';
+                setTimeout(() => { if (playErrorMsg.value.includes('布局') || playErrorMsg.value.includes('方向')) playErrorMsg.value = ''; }, 2000);
                 return;
             }
             try {
                 if (!document.fullscreenElement) {
                     try { await document.documentElement.requestFullscreen(); }
                     catch (e) {
-                        playErrorMsg.value = '锁定方向需要先进入全屏';
-                        setTimeout(() => { if (playErrorMsg.value.includes('全屏')) playErrorMsg.value = ''; }, 3000);
+                        checkMobileView();
+                        playErrorMsg.value = '布局已切换（锁定方向需全屏）';
+                        setTimeout(() => { if (playErrorMsg.value.includes('布局')) playErrorMsg.value = ''; }, 2500);
                         return;
                     }
                 }
@@ -214,6 +235,7 @@ createApp({
             } catch (e) {
                 playErrorMsg.value = '方向锁定失败：' + (e.message || e);
             }
+            checkMobileView();
             setTimeout(() => { if (playErrorMsg.value.includes('锁定') || playErrorMsg.value.includes('方向')) playErrorMsg.value = ''; }, 3000);
         };
 
@@ -255,6 +277,7 @@ createApp({
         };
 
         const onWindowResize = () => {
+            checkMobileView();
             if (fullscreenPlayerVisible.value) {
                 updateFullscreenScrollH();
                 scrollFullscreenLyricsToActive();
@@ -290,9 +313,6 @@ createApp({
         };
         const toHttps = (url) => (url && typeof url === 'string') ? url.replace(/^http:\/\//i, 'https://') : url;
 
-        /* ============================================================
-           封面工具：统一走 weserv 代理
-           ============================================================ */
         const fixImageUrl = (url) => {
             if (!url || typeof url !== 'string') return '';
             url = url.trim();
@@ -309,11 +329,6 @@ createApp({
             return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=${size}&h=${size}&fit=cover&output=jpg`;
         };
 
-        /* ============================================================
-           ✅ 核心：按歌曲 ID 解析封面
-           官方 + 前 4 个 API 并发，无超时（timeout: 0）
-           Promise.any：谁先返回用谁，全都失败才落空
-           ============================================================ */
         const coverPromiseCache = new Map();
 
         const fetchCoverBySongId = (songId, size = 200) => {
@@ -323,7 +338,6 @@ createApp({
             const promise = (async () => {
                 const tasks = [];
 
-                // 网易云官方接口（无超时）
                 tasks.push(
                     axios.get(`https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`, { timeout: 0 })
                         .then(r => {
@@ -333,7 +347,6 @@ createApp({
                         .catch(() => '')
                 );
 
-                // 前 4 个第三方 API 并发（无超时）
                 for (let i = 0; i < Math.min(4, API_LIST.length); i++) {
                     const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
                     tasks.push(
@@ -360,7 +373,6 @@ createApp({
                 }
 
                 if (!rawUrl) {
-                    // 全部失败，不缓存，允许下次重试
                     coverPromiseCache.delete(key);
                     return '';
                 }
@@ -371,9 +383,6 @@ createApp({
             return promise;
         };
 
-        /* ============================================================
-           批量补封面：并发 8 个，谁先回来就谁先替换
-           ============================================================ */
         const enrichCoversBySongId = async (songs) => {
             if (!songs || !songs.length) return;
             const needList = songs.filter(s => s.needFetchCover);
@@ -392,7 +401,6 @@ createApp({
                             fullscreenCover.value = cover;
                         }
                     } else {
-                        // 没拿到，保留透明占位，下次能再试（不删 needFetchCover，可以换下次搜索重试）
                         song.needFetchCover = true;
                     }
                 }));
@@ -526,6 +534,7 @@ createApp({
             currentTheme.value = themeName;
             localStorage.setItem('appTheme', themeName);
             document.body.className = currentTheme.value;
+            if (isMobileView.value) document.body.classList.add('mobile-view');
             if (themeName === 'theme-custom') applyCustomColors();
             if (bgImageUrl.value && bgImageUrl.value.trim()) {
                 document.body.classList.add('custom-bg');
@@ -740,6 +749,8 @@ createApp({
             else stopKaraokeLoop();
         });
 
+        watch(orientationMode, () => { checkMobileView(); });
+
         const buildApiUrl = (apiBase, path) => {
             if (!userCookie.value.trim()) return `${apiBase}${path}`;
             const sep = path.includes('?') ? '&' : '?';
@@ -793,9 +804,6 @@ createApp({
             }
         };
 
-        /* ============================================================
-           搜索：搜索结果用透明占位，全部按 ID 拉封面
-           ============================================================ */
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -843,7 +851,6 @@ createApp({
             });
             loadingSearch.value = false;
 
-            // 全部按 ID 拉封面，谁先回来谁先替换
             enrichCoversBySongId(searchResults.value);
         };
 
@@ -938,7 +945,6 @@ createApp({
                 currentSongName.value = songName || '未知歌曲';
                 currentArtist.value = artistName || '网易云音乐';
 
-                // 传入的封面如果是 weserv 代理或有效 http 地址，先用它
                 let initialCover = DEFAULT_COVER;
                 if (coverUrl && coverUrl.startsWith('http') && coverUrl !== DEFAULT_COVER) {
                     initialCover = coverUrl;
@@ -967,7 +973,6 @@ createApp({
                 fullscreenCover.value = currentCover.value;
                 if (initialCover !== DEFAULT_COVER) setDynamicGradient(initialCover);
 
-                // 没有真实封面时，用 ID 拉高清 500
                 if (initialCover === DEFAULT_COVER) {
                     fetchCoverBySongId(songId, 500).then(cover => {
                         if (cover && currentSongId === songId) {
@@ -1506,6 +1511,7 @@ createApp({
                     if (s.customAccent) { customAccent.value = s.customAccent; applyCustomColors(); }
                     if (s.customBgStart) { customBgStart.value = s.customBgStart; applyCustomColors(); }
                     if (s.customBgEnd) { customBgEnd.value = s.customBgEnd; applyCustomColors(); }
+                    checkMobileView();
                     playErrorMsg.value = '✅ 设置导入成功';
                 } catch (err) { playErrorMsg.value = '❌ 导入失败'; }
                 setTimeout(() => { if (playErrorMsg.value.includes('设置')) playErrorMsg.value = ''; }, 2000);
@@ -1815,7 +1821,9 @@ createApp({
             loadCustomFontFromDB();
             loadPlaylists();
             initModalEvents();
+            checkMobileView();
             window.addEventListener('keydown', handleKeydown);
+            window.addEventListener('resize', checkMobileView);
             document.addEventListener('fullscreenchange', onFullscreenChange);
             window.addEventListener('resize', onWindowResize);
             if (autoFullscreenOnEnter.value) setupAutoFullscreen();
@@ -1836,6 +1844,7 @@ createApp({
 
         onUnmounted(() => {
             window.removeEventListener('resize', onWindowResize);
+            window.removeEventListener('resize', checkMobileView);
             document.removeEventListener('fullscreenchange', onFullscreenChange);
             stopKaraokeLoop();
         });
@@ -1876,7 +1885,8 @@ createApp({
             canInstall, installApp,
             orientationMode, setOrientation,
             isFullscreen, toggleFullscreen,
-            autoFullscreenOnEnter, saveAutoFullscreen
+            autoFullscreenOnEnter, saveAutoFullscreen,
+            isMobileView
         };
     }
 }).mount('#app');
