@@ -1,12 +1,12 @@
-document.title = '✅ 云音匣 v3 图片修复';
+document.title = '✅ 云音匣 v4 图片修复';
 
 const { createApp, ref, onMounted, onUnmounted, nextTick, computed, watch } = Vue;
 
-// 红色 ♪ 默认封面：不依赖任何外部资源，用于验证代码是否生效
+// 默认封面：红色背景 + 白色音符（用 <path> 画，不依赖字体）
 const DEFAULT_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
     '<rect width="200" height="200" fill="#ff6b6b"/>' +
-    '<text x="100" y="140" font-size="120" text-anchor="middle" fill="#ffffff">♪</text>' +
+    '<path d="M80 140 a20 20 0 1 0 40 0 a20 20 0 1 0 -40 0 M120 140 L120 60 L140 50 L140 70 L120 80 Z" fill="#ffffff"/>' +
     '</svg>'
 );
 
@@ -295,6 +295,11 @@ createApp({
         };
         const toHttps = (url) => (url && typeof url === 'string') ? url.replace(/^http:\/\//i, 'https://') : url;
 
+        const weservWrap = (url, size = 200) => {
+            const clean = String(url).replace(/^https?:\/\//i, '');
+            return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=${size}&h=${size}&fit=cover&output=jpg&default=1`;
+        };
+
         const fixImageUrl = (url) => {
             if (!url || typeof url !== 'string') return '';
             url = url.trim();
@@ -302,8 +307,12 @@ createApp({
             if (url.startsWith('//')) url = 'https:' + url;
             if (!/^https?:\/\//i.test(url)) return '';
             url = url.replace(/^http:\/\//i, 'https://');
-            if (/music\.126\.net/i.test(url) && !/[?&]param=/i.test(url)) {
-                url += (url.includes('?') ? '&' : '?') + 'param=200y200';
+            if (url.includes('images.weserv.nl')) return url;
+            if (/music\.126\.net/i.test(url)) {
+                if (!/[?&]param=/i.test(url)) {
+                    url += (url.includes('?') ? '&' : '?') + 'param=200y200';
+                }
+                return weservWrap(url, 200);
             }
             return url;
         };
@@ -829,67 +838,55 @@ createApp({
 
         const onImageLoad = (event) => {
             const img = event.target;
+            // 尺寸检测：weserv 或网易云返回的"错误小图"会被拦截
+            if (img.naturalWidth && img.naturalWidth < 20) {
+                if (img.src !== DEFAULT_COVER) {
+                    img.src = DEFAULT_COVER;
+                    return;
+                }
+            }
             const wrapper = img.closest('.cover-wrapper');
             if (wrapper) {
                 const loadingDiv = wrapper.querySelector('.cover-loading');
                 if (loadingDiv) loadingDiv.style.display = 'none';
             }
-            if (img.classList && img.classList.contains('cover-large')) setDynamicGradient(img.src);
+            if (img.classList && img.classList.contains('cover-large') && img.src.startsWith('http')) {
+                setDynamicGradient(img.src);
+            }
         };
 
         const onImageError = (event) => {
             const img = event.target;
             const current = img.src || '';
-            const stage = parseInt(img.dataset.imgStage || '0', 10);
 
-            if (current === DEFAULT_COVER || current.startsWith('data:image/svg+xml')) {
+            const hideLoading = () => {
                 const wrapper = img.closest('.cover-wrapper');
                 if (wrapper) {
                     const loadingDiv = wrapper.querySelector('.cover-loading');
                     if (loadingDiv) loadingDiv.style.display = 'none';
                 }
+            };
+
+            if (current === DEFAULT_COVER || current.startsWith('data:image/svg+xml')) {
+                hideLoading();
                 return;
             }
-
-            if (!current || current.startsWith('data:') || current.startsWith('blob:') || current === window.location.href) {
+            if (!current || current.startsWith('data:') || current === window.location.href) {
                 img.src = DEFAULT_COVER;
+                hideLoading();
                 return;
             }
 
-            if (stage === 0 && /music\.126\.net/i.test(current)) {
-                const hosts = ['p1', 'p2', 'p3', 'p4', 'm8', 'm9'];
-                const m = current.match(/\/\/([a-z0-9]+)\.music\.126\.net/i);
-                const curHost = m ? m[1] : '';
-                const idx = hosts.indexOf(curHost);
-                if (idx >= 0 && idx < hosts.length - 1) {
-                    img.dataset.imgStage = '1';
-                    img.src = current.replace(/\/\/[a-z0-9]+\.music\.126\.net/i, `//${hosts[idx + 1]}.music.126.net`);
-                    return;
-                }
-            }
-
-            if (stage <= 1) {
-                img.dataset.imgStage = '2';
-                const clean = current.replace(/^https?:\/\//i, '');
-                img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(clean) + '&w=200&h=200&fit=cover&output=jpg';
+            // 原始网易云 URL 失败 → weserv 代理
+            if (/music\.126\.net/i.test(current) && img.dataset.triedWeserv !== 'true') {
+                img.dataset.triedWeserv = 'true';
+                img.src = weservWrap(current, 200);
                 return;
             }
 
-            const songId = img.dataset.id;
-            const song = searchResults.value.find(s => String(s.id) === String(songId));
-            if (songId && song && img.dataset.detailTried !== 'true') {
-                img.dataset.detailTried = 'true';
-                enqueueImageLoad(songId, song.albumId);
-                img.src = DEFAULT_COVER;
-                return;
-            }
-
+            // 任何其他失败 → 默认图
             img.src = DEFAULT_COVER;
-            const wrapper = img.closest('.cover-wrapper');
-            if (wrapper) {
-                const loadingDiv = wrapper.querySelector('.cover-loading');
-                if (loadingDiv) loadingDiv.style.display = 'none';
-            }
+            hideLoading();
         };
 
         const searchSongs = async () => {
@@ -1907,31 +1904,6 @@ createApp({
             if (iosConfirm) iosConfirm.onclick = () => { document.getElementById('iosInstallModal').style.display = 'none'; };
         };
 
-        // 5 秒兜底：搜索结果封面如果还没加载完，强制切默认图
-        watch(searchResults, (list) => {
-            if (!list || !list.length) return;
-            setTimeout(() => {
-                document.querySelectorAll('.song-cover').forEach(img => {
-                    if (img.dataset.fallbackDone === 'true') return;
-                    if (!img.complete || img.naturalWidth === 0) {
-                        img.dataset.fallbackDone = 'true';
-                        img.src = DEFAULT_COVER;
-                    }
-                });
-            }, 5000);
-        }, { deep: true });
-
-        // 5 秒兜底：播放器大图如果还没加载完，强制切默认图
-        watch(currentCover, (url) => {
-            if (!url) return;
-            setTimeout(() => {
-                const img = document.querySelector('.cover-large');
-                if (img && (!img.complete || img.naturalWidth === 0)) {
-                    img.src = DEFAULT_COVER;
-                }
-            }, 5000);
-        });
-
         onMounted(() => {
             loadAllSettings();
             loadCustomFontFromDB();
@@ -1944,6 +1916,28 @@ createApp({
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW注册失败', e));
             }
+
+            // 兜底修复：把 referrerpolicy 从 no-referrer 改掉，避免网易云 CDN 拒绝
+            const fixReferrer = () => {
+                document.querySelectorAll('img[referrerpolicy="no-referrer"]').forEach(img => {
+                    img.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+                });
+            };
+            fixReferrer();
+            const obs = new MutationObserver(muts => {
+                muts.forEach(m => m.addedNodes.forEach(n => {
+                    if (n.nodeType === 1) {
+                        if (n.tagName === 'IMG' && n.getAttribute('referrerpolicy') === 'no-referrer') {
+                            n.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+                        }
+                        n.querySelectorAll && n.querySelectorAll('img[referrerpolicy="no-referrer"]').forEach(img => {
+                            img.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+                        });
+                    }
+                }));
+            });
+            obs.observe(document.body, { childList: true, subtree: true });
+
             const ann = document.getElementById('announcementModal');
             if (ann) {
                 ann.style.display = 'flex';
