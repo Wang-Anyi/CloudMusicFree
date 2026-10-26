@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloudmusic-v23';
+const CACHE_NAME = 'cloudmusic-v25';
 const ASSETS = ['./', './index.html', './script.js', './style.css', './manifest.json'];
 const OPTIONAL_ASSETS = ['./assets/icon-192.png', './assets/icon-512.png', './assets/favicon.ico'];
 
