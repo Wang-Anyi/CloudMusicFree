@@ -286,30 +286,22 @@ createApp({
             }
         };
 
-        const API_LIST = [
-            'https://netease-cloud-music-api-five-roan-88.vercel.app',
-            'https://music-api.heheda.top',
-            'https://ncm.zhenxin.me',
-            'https://ncme.zhenxin.me',
-            'https://zm.i9mr.com',
-            'https://music.mcseekeri.com',
-            'https://zm.wwoyun.cn',
-            'https://api.injahow.cn',
-            'https://netease-api.cyan9527.com',
-            'https://music.ghser.com',
-            'https://ncm.landdy.cn',
-            'https://neteaseapi.0721play.icu',
-            // ⬇️ 自建 API（仅国外可用），国内自动冷却跳过
-            // 'https://你的自建API1',
-            // 'https://你的自建API2',
-        ];
+        /* ============================================================
+           朋友的 Meting API（主力）
+           ============================================================ */
+        const METING_BASE = 'https://musicapi.bixygames.com/api';
+        const metingUrl = (type, id, extra = '') =>
+            `${METING_BASE}?server=netease&type=${type}&id=${encodeURIComponent(id)}${extra}`;
 
-        const VIP_API_LIST = [
+        /* ============================================================
+           补充 API（从原 13 个里挑出最稳定的 4 个）
+           用于：歌曲详情、歌单详情、歌单全部歌曲、用户歌单、VIP 播放地址
+           ============================================================ */
+        const SUPPLEMENT_API_LIST = [
             'https://netease-cloud-music-api-five-roan-88.vercel.app',
             'https://music-api.heheda.top',
             'https://ncm.zhenxin.me',
-            // 自建 API 如果确认支持 VIP，可加到这里
-            // 'https://你的自建API',
+            'https://ncme.zhenxin.me'
         ];
 
         let currentApiIndex = 0;
@@ -335,20 +327,36 @@ createApp({
             if (apiCooldown.has(apiBase)) apiCooldown.delete(apiBase);
         };
 
-        const formatDuration = (ms) => {
-            if (!ms) return '00:00';
-            const sec = Math.floor(ms / 1000);
-            const mins = Math.floor(sec / 60);
-            const secs = sec % 60;
-            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        };
-        const formatTime = (seconds) => {
-            if (isNaN(seconds)) return '00:00';
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        };
         const toHttps = (url) => (url && typeof url === 'string') ? url.replace(/^http:\/\//i, 'https://') : url;
+
+        const extractIdFromMetingUrl = (url) => {
+            if (!url) return '';
+            const m = String(url).match(/[?&]id=(\d+)/);
+            return m ? m[1] : '';
+        };
+
+        const metingItemToSong = (item) => {
+            if (!item) return null;
+            const id = extractIdFromMetingUrl(item.url) || '';
+            return {
+                id: id || String(Math.random()),
+                name: item.title || '未知',
+                artist: item.author || '未知',
+                duration: 0,
+                picUrl: toHttps(item.pic || '') || DEFAULT_COVER,
+                playUrl: toHttps(item.url || ''),
+                lrcUrl: toHttps(item.lrc || ''),
+                isVip: false,
+                albumId: null,
+                loadingCover: false,
+                needFetchCover: false
+            };
+        };
+
+        const checkIsVip = (item) => {
+            const fee = item?.fee ?? 0;
+            return fee === 1 || fee === 4;
+        };
 
         const fixImageUrl = (url) => {
             if (!url || typeof url !== 'string') return '';
@@ -366,89 +374,20 @@ createApp({
             return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=${size}&h=${size}&fit=cover&output=jpg`;
         };
 
-        const coverPromiseCache = new Map();
-
-        const fetchCoverBySongId = (songId, size = 200) => {
-            const key = `${songId}_${size}`;
-            if (coverPromiseCache.has(key)) return coverPromiseCache.get(key);
-
-            const promise = (async () => {
-                const tasks = [];
-
-                tasks.push(
-                    axios.get(`https://music.163.com/api/song/detail/?id=${songId}&ids=[${songId}]`, { timeout: 6000 })
-                        .then(r => {
-                            const s = r.data?.songs?.[0];
-                            return s?.album?.picUrl || s?.album?.blurPicUrl || '';
-                        })
-                        .catch(() => '')
-                );
-
-                for (let i = 0; i < Math.min(4, API_LIST.length); i++) {
-                    const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
-                    if (!isApiAvailable(apiBase)) continue;
-                    tasks.push(
-                        axios.get(`${apiBase}/song/detail?ids=${songId}`, { timeout: 6000 })
-                            .then(r => {
-                                const s = r.data?.songs?.[0] || r.data?.data?.[0];
-                                return s?.al?.picUrl || s?.album?.picUrl || '';
-                            })
-                            .catch(() => '')
-                    );
-                }
-
-                let rawUrl = '';
-                try {
-                    rawUrl = await Promise.any(
-                        tasks.map(p => p.then(url => {
-                            const fixed = fixImageUrl(url);
-                            if (!fixed) throw new Error('invalid');
-                            return fixed;
-                        }))
-                    );
-                } catch (e) {
-                    rawUrl = '';
-                }
-
-                if (!rawUrl) {
-                    coverPromiseCache.delete(key);
-                    return '';
-                }
-                return proxyCover(rawUrl, size);
-            })();
-
-            coverPromiseCache.set(key, promise);
-            return promise;
+        const formatDuration = (ms) => {
+            if (!ms) return '00:00';
+            const sec = Math.floor(ms / 1000);
+            const mins = Math.floor(sec / 60);
+            const secs = sec % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        };
+        const formatTime = (seconds) => {
+            if (isNaN(seconds)) return '00:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
         };
 
-        const enrichCoversBySongId = async (songs) => {
-            if (!songs || !songs.length) return;
-            const needList = songs.filter(s => s.needFetchCover);
-            if (!needList.length) return;
-
-            const CONCURRENCY = 8;
-            for (let i = 0; i < needList.length; i += CONCURRENCY) {
-                const batch = needList.slice(i, i + CONCURRENCY);
-                await Promise.allSettled(batch.map(async (song) => {
-                    const cover = await fetchCoverBySongId(song.id, 200);
-                    if (cover) {
-                        song.picUrl = cover;
-                        song.needFetchCover = false;
-                        if (currentSongId && String(currentSongId) === String(song.id)) {
-                            currentCover.value = cover;
-                            fullscreenCover.value = cover;
-                        }
-                    } else {
-                        song.needFetchCover = true;
-                    }
-                }));
-            }
-        };
-
-        const checkIsVip = (item) => {
-            const fee = item?.fee ?? 0;
-            return fee === 1 || fee === 4;
-        };
         const extractSongId = (input) => {
             if (!input) return null;
             if (/^\d+$/.test(input.trim())) return input.trim();
@@ -499,11 +438,11 @@ createApp({
                 '当前主题': currentTheme.value,
                 '是否填写 Cookie': userCookie.value.trim() ? '是' : '否',
                 'Cookie 长度': String(userCookie.value.trim().length),
-                '当前 API 索引': String(currentApiIndex),
-                '当前 API': API_LIST[currentApiIndex] || '(无)',
+                'API 主力': '朋友的 Meting API',
+                '补充 API 索引': String(currentApiIndex),
                 '正在播放': currentSongName.value || '(无)',
                 '当前歌曲 ID': currentSongId || '(无)',
-                '当前是否 VIP 歌曲': currentIsVip.value ? '是' : '否',
+                '当前是否 VIP': currentIsVip.value ? '是' : '否',
                 '播放状态': isPlaying.value ? '播放中' : '暂停',
                 '队列长度': String(queue.value.length),
                 '搜索结果数': String(searchResults.value.length),
@@ -818,15 +757,19 @@ createApp({
             return lines.join('\n');
         };
 
+        /* ============================================================
+           歌词：朋友的 Meting API type=lrc
+           ============================================================ */
         const fetchLyrics = async (songId) => {
             try {
-                const res = await requestWithFallback(`/lyric?id=${songId}`, { timeout: 8000 });
-                const data = res.data;
-                const lrcStr = data.lrc?.lyric || (typeof data.lrc === 'string' ? data.lrc : '') || data.lyric || '';
-                const tlyricStr = data.tlyric?.lyric || (typeof data.tlyric === 'string' ? data.tlyric : '') || '';
-                currentLrcRaw.value = lrcStr;
-                currentTLrcRaw.value = tlyricStr;
-                const merged = mergeLyrics(lrcStr, tlyricStr);
+                const lrcUrl = metingUrl('lrc', songId);
+                const r = await axios.get(lrcUrl, { timeout: 10000 });
+                let text = '';
+                if (typeof r.data === 'string') text = r.data;
+                else if (r.data?.lyric) text = r.data.lyric;
+                currentLrcRaw.value = text;
+                currentTLrcRaw.value = '';
+                const merged = mergeLyrics(text, '');
                 lyricsLines.value = merged;
                 fullscreenLyrics.value = merged;
             } catch (e) {
@@ -921,11 +864,11 @@ createApp({
         };
 
         const requestWithFallback = async (urlPath, options = {}) => {
-            const maxRetries = API_LIST.length;
+            const maxRetries = SUPPLEMENT_API_LIST.length;
             let lastError = null;
             for (let i = 0; i < maxRetries; i++) {
                 const apiIndex = (currentApiIndex + i) % maxRetries;
-                const apiBase = API_LIST[apiIndex];
+                const apiBase = SUPPLEMENT_API_LIST[apiIndex];
                 if (!isApiAvailable(apiBase)) continue;
                 const fullUrl = buildApiUrl(apiBase, urlPath);
                 try {
@@ -938,7 +881,7 @@ createApp({
                     lastError = err;
                 }
             }
-            throw lastError || new Error('所有 API 均不可用');
+            throw lastError || new Error('所有补充 API 均不可用');
         };
 
         const onImageLoad = (event) => {
@@ -972,6 +915,36 @@ createApp({
             }
         };
 
+        /* ============================================================
+           搜索：朋友的 Meting + 异步补充歌曲详情
+           ============================================================ */
+        const enrichSongsWithDetail = async (songs) => {
+            const ids = songs.map(s => s.id).filter(id => /^\d+$/.test(id));
+            if (!ids.length) return;
+            const batchSize = 100;
+            for (let i = 0; i < ids.length; i += batchSize) {
+                const batch = ids.slice(i, i + batchSize);
+                try {
+                    const res = await requestWithFallback(`/song/detail?ids=${batch.join(',')}`, { timeout: 10000 });
+                    const detailSongs = res.data?.songs || res.data?.data || [];
+                    detailSongs.forEach(d => {
+                        const target = songs.find(s => String(s.id) === String(d.id));
+                        if (target) {
+                            target.duration = d.dt || 0;
+                            target.isVip = checkIsVip(d);
+                            target.albumId = d.al?.id || null;
+                            const cover = d.al?.picUrl;
+                            if (cover && cover.startsWith('http')) {
+                                target.picUrl = toHttps(cover);
+                            }
+                        }
+                    });
+                } catch (e) {
+                    logError(e, 'enrichSongsWithDetail');
+                }
+            }
+        };
+
         const searchSongs = async () => {
             const keyword = searchKeyword.value.trim();
             if (!keyword) return alert('请输入歌名或歌手');
@@ -979,107 +952,44 @@ createApp({
             searchPerformed.value = true;
             loadingSearch.value = true;
 
-            let songsData = null;
-            for (let i = 0; i < API_LIST.length; i++) {
-                const apiBase = API_LIST[i];
-                if (!isApiAvailable(apiBase)) continue;
-                try {
-                    const url = buildApiUrl(apiBase, `/search?keywords=${encodeURIComponent(keyword)}&limit=30`);
-                    const res = await axios.get(url, { timeout: 8000 });
-                    const songs = res.data?.result?.songs || res.data?.data || (Array.isArray(res.data) ? res.data : null);
-                    if (songs && songs.length) {
-                        songsData = songs;
-                        currentApiIndex = i;
-                        markApiOk(apiBase);
-                        break;
-                    }
-                } catch (e) {
-                    markApiFailed(apiBase);
+            try {
+                const res = await axios.get(metingUrl('search', keyword), { timeout: 15000 });
+                const items = Array.isArray(res.data) ? res.data : [];
+                if (!items.length) {
+                    playErrorMsg.value = '没有找到相关歌曲';
+                    logError('搜索无结果: ' + keyword, 'searchSongs');
+                    loadingSearch.value = false;
+                    return;
                 }
-            }
-
-            if (!songsData) {
-                searchResults.value = [];
-                playErrorMsg.value = '所有搜索接口均不可用';
-                logError('搜索失败：所有 API 均不可用', 'searchSongs');
+                searchResults.value = items.map(metingItemToSong).filter(Boolean);
                 loadingSearch.value = false;
-                return;
+                enrichSongsWithDetail(searchResults.value);
+            } catch (e) {
+                searchResults.value = [];
+                playErrorMsg.value = '搜索失败：' + (e.message || '接口异常');
+                logError(e, 'searchSongs');
+                loadingSearch.value = false;
             }
-
-            searchResults.value = songsData.map(item => {
-                const id = String(item.id || item.song_id);
-                const name = item.name || item.title || '未知';
-                const artist = (item.artists || item.ar || []).map(a => a.name || a).join(' / ') || item.artist || '未知';
-                const dur = item.duration || item.dt || 0;
-                const isVip = checkIsVip(item);
-                const albumId = item.album?.id || item.al?.id || item.albumId || null;
-
-                return {
-                    id, name, artist, duration: dur,
-                    picUrl: DEFAULT_COVER,
-                    isVip, albumId,
-                    loadingCover: false,
-                    needFetchCover: true
-                };
-            });
-            loadingSearch.value = false;
-
-            enrichCoversBySongId(searchResults.value);
         };
 
-        const outerUrlCache = new Map();
-        const probeOuterUrl = (songId, allowShort = false) => {
-            const key = `${songId}_${allowShort}`;
-            if (outerUrlCache.has(key)) return outerUrlCache.get(key);
-            const outerUrl = `https://music.163.com/song/media/outer/url?id=${songId}.mp3`;
-            const p = new Promise((resolve) => {
-                const a = new Audio();
-                let settled = false;
-                const done = (ok) => {
-                    if (settled) return;
-                    settled = true;
-                    a.oncanplay = a.onloadedmetadata = a.onerror = null;
-                    try { a.pause(); } catch (e) {}
-                    a.removeAttribute('src');
-                    try { a.load(); } catch (e) {}
-                    resolve(ok ? outerUrl : null);
-                };
-                a.preload = 'auto';
-                a.onloadedmetadata = () => { if (!allowShort && a.duration && a.duration < 40) done(false); };
-                a.oncanplay = () => done(true);
-                a.onerror = () => done(false);
-                a.src = outerUrl;
-                setTimeout(() => done(false), 5000);
-            });
-            outerUrlCache.set(key, p);
-            return p;
-        };
-
-        const _getSongUrlV1FromList = async (songId, apiList, requireFull) => {
-            const levels = [...QUALITY_LEVELS];
-            const start = levels.indexOf(qualityLevel.value);
-            if (start > 0) levels.splice(0, start);
-
-            for (const apiBase of apiList) {
+        /* ============================================================
+           播放地址：Meting（免费）+ 补充 API（VIP）
+           ============================================================ */
+        const getSongUrlV1ForVip = async (songId) => {
+            for (const apiBase of SUPPLEMENT_API_LIST) {
                 if (!isApiAvailable(apiBase)) continue;
-                for (const lv of levels) {
+                for (const lv of ['exhigh', 'higher', 'standard']) {
                     try {
                         const url = buildApiUrl(apiBase, `/song/url/v1?id=${songId}&level=${lv}`);
                         const res = await axios.get(url, { timeout: 12000 });
                         const item = (res.data?.data || [])[0];
-                        const musicUrl = item?.url;
-                        if (!musicUrl) continue;
-
-                        const trial = item.freeTrialInfo;
-                        const isTrial = !!(trial && typeof trial === 'object' && (trial.start !== undefined || trial.end !== undefined));
-
-                        if (requireFull && isTrial) {
-                            markApiFailed(apiBase);
-                            continue;
+                        if (item?.url) {
+                            const trial = item.freeTrialInfo;
+                            const isTrial = !!(trial && typeof trial === 'object');
+                            if (isTrial) continue;
+                            markApiOk(apiBase);
+                            return toHttps(item.url);
                         }
-
-                        markApiOk(apiBase);
-                        return { url: toHttps(musicUrl), isTrial };
                     } catch (e) {
                         markApiFailed(apiBase);
                     }
@@ -1088,80 +998,27 @@ createApp({
             return null;
         };
 
-        const getSongUrlV1ForVip = async (songId) => {
-            const vip = await _getSongUrlV1FromList(songId, VIP_API_LIST, true);
-            if (vip) return vip;
-            const general = await _getSongUrlV1FromList(songId, API_LIST, false);
-            if (general) return general;
-            return null;
-        };
-
-        const getSongUrlV1 = async (songId) => {
-            return await _getSongUrlV1FromList(songId, API_LIST, false);
-        };
-
-        const getSongUrlLegacy = async (songId) => {
-            for (let i = 0; i < API_LIST.length; i++) {
-                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
-                if (!isApiAvailable(apiBase)) continue;
-                try {
-                    const url = buildApiUrl(apiBase, `/song/url?id=${songId}`);
-                    const res = await axios.get(url, { timeout: 20000 });
-                    const musicUrl = res.data?.data?.[0]?.url || res.data?.url || (typeof res.data === 'string' ? res.data : null);
-                    if (musicUrl) {
-                        currentApiIndex = (currentApiIndex + i) % API_LIST.length;
-                        markApiOk(apiBase);
-                        return toHttps(musicUrl);
-                    }
-                } catch (err) {
-                    markApiFailed(apiBase);
-                }
-            }
-            return null;
-        };
-
-        const getSongUrl = async (songId, isVip = false) => {
-            let url;
-
+        const getSongUrl = async (songId, isVip, playUrl) => {
             if (isVip) {
-                const result = await getSongUrlV1ForVip(songId);
-                if (result) {
-                    if (result.isTrial) {
-                        playErrorMsg.value = '⚠️ VIP 解析失败，正在播放试听片段';
-                        setTimeout(() => { if (playErrorMsg.value.includes('VIP')) playErrorMsg.value = ''; }, 4000);
-                    }
-                    return result.url;
-                }
-
-                url = await probeOuterUrl(songId, true);
-                if (url) {
-                    playErrorMsg.value = '⚠️ VIP 解析失败，正在播放试听片段';
-                    setTimeout(() => { if (playErrorMsg.value.includes('VIP')) playErrorMsg.value = ''; }, 4000);
-                    return url;
-                }
-                throw new Error('VIP歌曲解析失败，请确认 Cookie 有效');
+                const url = await getSongUrlV1ForVip(songId);
+                if (url) return url;
+                if (playUrl) return playUrl;
+                return metingUrl('url', songId);
             }
-
-            url = await probeOuterUrl(songId); if (url) return url;
-            const v1 = await getSongUrlV1(songId); if (v1) return v1.url;
-            url = await getSongUrlLegacy(songId); if (url) return url;
-            url = await probeOuterUrl(songId, true); if (url) return url;
-            throw new Error('无法获取播放地址');
+            if (playUrl) return playUrl;
+            return metingUrl('url', songId);
         };
 
         const getSongDetail = async (songId) => {
-            for (let i = 0; i < API_LIST.length; i++) {
-                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+            for (let i = 0; i < SUPPLEMENT_API_LIST.length; i++) {
+                const apiBase = SUPPLEMENT_API_LIST[(currentApiIndex + i) % SUPPLEMENT_API_LIST.length];
                 if (!isApiAvailable(apiBase)) continue;
                 try {
                     const url = buildApiUrl(apiBase, `/song/detail?ids=${songId}`);
                     const res = await axios.get(url, { timeout: 8000 });
-                    const detail =
-                        res.data?.songs?.[0] ||
-                        res.data?.data?.[0] ||
-                        res.data?.result?.songs?.[0] ||
-                        (Array.isArray(res.data) ? res.data[0] : null);
+                    const detail = res.data?.songs?.[0] || res.data?.data?.[0];
                     if (detail) {
+                        currentApiIndex = (currentApiIndex + i) % SUPPLEMENT_API_LIST.length;
                         markApiOk(apiBase);
                         return detail;
                     }
@@ -1172,13 +1029,13 @@ createApp({
             throw new Error('无法获取歌曲详情');
         };
 
-        const playSongById = async (songId, songName, artistName, coverUrl, addToQueue = true, queueIndex = -1, isVip = false) => {
+        const playSongById = async (songId, songName, artistName, coverUrl, addToQueue = true, queueIndex = -1, isVip = false, playUrl = '') => {
             if (!songId) return;
             const myToken = ++activePlayToken;
             loadingPlay.value = true;
             playErrorMsg.value = '';
             try {
-                const musicUrl = await getSongUrl(songId, isVip);
+                const musicUrl = await getSongUrl(songId, isVip, playUrl);
                 if (myToken !== activePlayToken) { loadingPlay.value = false; return; }
 
                 currentSongName.value = songName || '未知歌曲';
@@ -1200,10 +1057,11 @@ createApp({
                 if (addToQueue) {
                     const existing = queue.value.find(s => s.id === songId);
                     if (!existing) {
-                        queue.value.push({ id: songId, name: songName, artist: artistName, picUrl: currentCover.value, isVip: !!isVip });
+                        queue.value.push({ id: songId, name: songName, artist: artistName, picUrl: currentCover.value, isVip: !!isVip, playUrl });
                         currentQueueIndex = queue.value.length - 1;
                     } else {
                         existing.isVip = !!isVip;
+                        existing.playUrl = playUrl || existing.playUrl;
                         currentQueueIndex = queue.value.findIndex(s => s.id === songId);
                     }
                 } else if (queueIndex >= 0) {
@@ -1213,16 +1071,6 @@ createApp({
                 fullscreenArtist.value = currentArtist.value;
                 fullscreenCover.value = currentCover.value;
                 if (initialCover !== DEFAULT_COVER) setDynamicGradient(initialCover);
-
-                if (initialCover === DEFAULT_COVER) {
-                    fetchCoverBySongId(songId, 500).then(cover => {
-                        if (cover && currentSongId === songId) {
-                            currentCover.value = cover;
-                            fullscreenCover.value = cover;
-                            setDynamicGradient(cover);
-                        }
-                    }).catch(() => {});
-                }
 
                 const audio = audioPlayer.value;
                 if (audio) {
@@ -1286,7 +1134,7 @@ createApp({
             let i = currentQueueIndex - 1;
             if (i < 0) i = total - 1;
             const song = queue.value[i];
-            playSongById(song.id, song.name, song.artist, song.picUrl, false, i, !!song.isVip);
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, i, !!song.isVip, song.playUrl || '');
         };
 
         const playNext = (manual = false) => {
@@ -1313,14 +1161,14 @@ createApp({
                 const pickIdx = pool[Math.floor(Math.random() * pool.length)];
                 shufflePlayed.add(pickIdx);
                 const song = queue.value[pickIdx];
-                playSongById(song.id, song.name, song.artist, song.picUrl, false, pickIdx, !!song.isVip);
+                playSongById(song.id, song.name, song.artist, song.picUrl, false, pickIdx, !!song.isVip, song.playUrl || '');
                 return;
             }
 
             let i = currentQueueIndex + 1;
             if (i >= total) i = 0;
             const song = queue.value[i];
-            playSongById(song.id, song.name, song.artist, song.picUrl, false, i, !!song.isVip);
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, i, !!song.isVip, song.playUrl || '');
         };
 
         const userNext = () => playNext(true);
@@ -1379,12 +1227,10 @@ createApp({
                 }
                 if (!lyricText) {
                     try {
-                        const lrcRes = await requestWithFallback(`/lyric?id=${currentSongId}`, { timeout: 8000 });
-                        const data = lrcRes.data;
-                        const orig = data?.lrc?.lyric || (typeof data?.lrc === 'string' ? data.lrc : '') || data?.lyric || '';
-                        const trans = data?.tlyric?.lyric || (typeof data?.tlyric === 'string' ? data.tlyric : '') || '';
-                        lyricText = buildMergedLrc(orig, trans);
-                        hasTranslation = !!trans;
+                        const lrcUrl = metingUrl('lrc', currentSongId);
+                        const lrcRes = await axios.get(lrcUrl, { timeout: 10000 });
+                        const text = typeof lrcRes.data === 'string' ? lrcRes.data : (lrcRes.data?.lyric || '');
+                        lyricText = text;
                     } catch (e) {}
                 }
 
@@ -1451,7 +1297,7 @@ createApp({
 
                 const features = [];
                 if (coverBuffer) features.push('封面');
-                if (lyricText) features.push(hasTranslation ? '歌词(含翻译)' : '歌词');
+                if (lyricText) features.push('歌词');
                 features.push('完整信息');
                 playErrorMsg.value = `✅ 下载完成（含${features.join(' / ')}）${currentIsVip.value ? '（VIP 可能仅含试听部分）' : ''}`;
                 setTimeout(() => { if (playErrorMsg.value.includes('下载完成')) playErrorMsg.value = ''; }, 3000);
@@ -1868,6 +1714,9 @@ createApp({
             }
         };
 
+        /* ============================================================
+           推荐歌单：补充 API
+           ============================================================ */
         const loadPlaylists = async () => {
             const allIds = [
                 '3778678',
@@ -1890,7 +1739,7 @@ createApp({
                         plist.push({
                             id: res.data.playlist.id,
                             name: res.data.playlist.name,
-                            coverImgUrl: toHttps(res.data.playlist.coverImgUrl || ''),
+                            coverImgUrl: proxyCover(toHttps(res.data.playlist.coverImgUrl || ''), 200),
                             trackCount: res.data.playlist.trackCount
                         });
                     }
@@ -1901,6 +1750,9 @@ createApp({
             ];
         };
 
+        /* ============================================================
+           歌单加载：补充 API（playlist/detail + playlist/track/all）
+           ============================================================ */
         const fetchPlaylistTracks = async (playlistId, plName, isCustom = false) => {
             searchResults.value = [];
             searchPerformed.value = true;
@@ -1909,13 +1761,13 @@ createApp({
             const cookieParam = userCookie.value.trim() ? `&cookie=${encodeURIComponent(userCookie.value)}` : '';
 
             const tryRequest = async (path) => {
-                for (let i = 0; i < API_LIST.length; i++) {
-                    const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                for (let i = 0; i < SUPPLEMENT_API_LIST.length; i++) {
+                    const apiBase = SUPPLEMENT_API_LIST[(currentApiIndex + i) % SUPPLEMENT_API_LIST.length];
                     if (!isApiAvailable(apiBase)) continue;
                     try {
                         const res = await axios.get(`${apiBase}${path}${cookieParam}`, { timeout: 20000 });
                         if (res && res.data) {
-                            currentApiIndex = (currentApiIndex + i) % API_LIST.length;
+                            currentApiIndex = (currentApiIndex + i) % SUPPLEMENT_API_LIST.length;
                             markApiOk(apiBase);
                             return res.data;
                         }
@@ -1973,14 +1825,14 @@ createApp({
                     for (let i = 0; i < trackIds.length; i += batchSize) {
                         const batch = trackIds.slice(i, i + batchSize);
                         const idsParam = '[' + batch.join(',') + ']';
-                        for (let j = 0; j < API_LIST.length; j++) {
-                            const apiBase = API_LIST[(currentApiIndex + j) % API_LIST.length];
+                        for (let j = 0; j < SUPPLEMENT_API_LIST.length; j++) {
+                            const apiBase = SUPPLEMENT_API_LIST[(currentApiIndex + j) % SUPPLEMENT_API_LIST.length];
                             if (!isApiAvailable(apiBase)) continue;
                             try {
                                 const res = await axios.get(`${apiBase}/song/detail?ids=${encodeURIComponent(idsParam)}${cookieParam}`, { timeout: 20000 });
                                 if (res.data && res.data.songs && res.data.songs.length) {
                                     collected.push(...res.data.songs);
-                                    currentApiIndex = (currentApiIndex + j) % API_LIST.length;
+                                    currentApiIndex = (currentApiIndex + j) % SUPPLEMENT_API_LIST.length;
                                     markApiOk(apiBase);
                                     break;
                                 }
@@ -2000,21 +1852,21 @@ createApp({
                             name: track.name || '未知',
                             artist: (track.ar || track.artists || []).map(a => a.name || a).join('/') || '未知',
                             duration: track.dt || track.duration || 0,
-                            picUrl: DEFAULT_COVER,
+                            picUrl: proxyCover(toHttps(track.al?.picUrl || ''), 200) || DEFAULT_COVER,
                             isVip: checkIsVip(track),
-                            albumId: track.album?.id || track.al?.id || track.albumId || null,
+                            albumId: track.al?.id || track.album?.id || null,
                             loadingCover: false,
-                            needFetchCover: true
+                            needFetchCover: false,
+                            playUrl: metingUrl('url', track.id)
                         };
                     });
                     searchResults.value = songList;
                     playErrorMsg.value = `✅ 已加载歌单: ${plName} (共 ${songList.length} 首)`;
                     if (isCustom) {
-                        queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl, isVip: s.isVip }));
+                        queue.value = songList.map(s => ({ id: s.id, name: s.name, artist: s.artist, picUrl: s.picUrl, isVip: s.isVip, playUrl: s.playUrl }));
                         currentQueueIndex = -1;
                         playErrorMsg.value += ' · 已加入播放队列';
                     }
-                    enrichCoversBySongId(songList);
                     setTimeout(() => { if (playErrorMsg.value.includes('已加载歌单')) playErrorMsg.value = ''; }, 3000);
                 } else {
                     searchResults.value = [];
@@ -2038,11 +1890,14 @@ createApp({
             await fetchPlaylistTracks(id, `自定义歌单 ${id}`, true);
         };
 
+        /* ============================================================
+           我的歌单：补充 API
+           ============================================================ */
         let cachedUid = null;
         const getMyUid = async () => {
             if (cachedUid) return cachedUid;
-            for (let i = 0; i < API_LIST.length; i++) {
-                const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+            for (let i = 0; i < SUPPLEMENT_API_LIST.length; i++) {
+                const apiBase = SUPPLEMENT_API_LIST[(currentApiIndex + i) % SUPPLEMENT_API_LIST.length];
                 if (!isApiAvailable(apiBase)) continue;
                 try {
                     let url = `${apiBase}/user/account/get`;
@@ -2075,8 +1930,8 @@ createApp({
                 const uid = await getMyUid();
                 if (!uid) throw new Error('Cookie 可能已失效');
                 let list = null;
-                for (let i = 0; i < API_LIST.length; i++) {
-                    const apiBase = API_LIST[(currentApiIndex + i) % API_LIST.length];
+                for (let i = 0; i < SUPPLEMENT_API_LIST.length; i++) {
+                    const apiBase = SUPPLEMENT_API_LIST[(currentApiIndex + i) % SUPPLEMENT_API_LIST.length];
                     if (!isApiAvailable(apiBase)) continue;
                     try {
                         let url = `${apiBase}/user/playlist?uid=${uid}&limit=1000&offset=0`;
@@ -2092,10 +1947,10 @@ createApp({
                         markApiFailed(apiBase);
                     }
                 }
-                if (!list) throw new Error('所有 API 均无法获取歌单');
+                if (!list) throw new Error('所有补充 API 均无法获取歌单');
                 myPlaylists.value = list.map(pl => ({
                     id: String(pl.id), name: pl.name,
-                    coverImgUrl: toHttps(pl.coverImgUrl || ''),
+                    coverImgUrl: proxyCover(toHttps(pl.coverImgUrl || ''), 200),
                     trackCount: pl.trackCount, specialType: pl.specialType, subscribed: pl.subscribed
                 }));
                 if (autoOpenModal) {
@@ -2133,7 +1988,6 @@ createApp({
             hideVipModal();
         };
 
-        /* ✅ 点击歌曲时把当前列表设为播放队列，实现"在当前歌单/搜索结果里循环" */
         const handlePlayClick = (song) => {
             if (song.isVip && !userCookie.value.trim()) {
                 showVipModal(song);
@@ -2146,13 +2000,14 @@ createApp({
                     name: s.name,
                     artist: s.artist,
                     picUrl: s.picUrl,
-                    isVip: !!s.isVip
+                    isVip: !!s.isVip,
+                    playUrl: s.playUrl || ''
                 }));
                 queue.value = newQueue;
                 const idx = newQueue.findIndex(s => String(s.id) === String(song.id));
                 currentQueueIndex = idx >= 0 ? idx : -1;
             }
-            playSongById(song.id, song.name, song.artist, song.picUrl, false, currentQueueIndex, !!song.isVip);
+            playSongById(song.id, song.name, song.artist, song.picUrl, false, currentQueueIndex, !!song.isVip, song.playUrl || '');
         };
 
         const parseById = async () => {
@@ -2161,10 +2016,11 @@ createApp({
             try {
                 const detail = await getSongDetail(id);
                 const isVip = checkIsVip(detail);
-                const picUrl = DEFAULT_COVER;
+                const cover = detail?.al?.picUrl;
+                const picUrl = cover ? proxyCover(toHttps(cover), 200) : DEFAULT_COVER;
                 const song = { id: String(detail.id), name: detail.name, artist: (detail.ar || []).map(a => a.name).join('/'), picUrl, isVip };
                 if (isVip && !userCookie.value.trim()) showVipModal(song);
-                else playSongById(song.id, song.name, song.artist, song.picUrl, true, -1, isVip);
+                else playSongById(song.id, song.name, song.artist, song.picUrl, true, -1, isVip, metingUrl('url', song.id));
             } catch (err) { playErrorMsg.value = '获取歌曲信息失败，请检查ID'; logError(err, 'parseById'); }
         };
 
