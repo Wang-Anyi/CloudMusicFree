@@ -992,7 +992,6 @@ createApp({
             return metingUrl('url', songId);
         };
 
-        /* ✅ 仅下载时使用：从补充 API 拿 https 音频地址 */
         const getSongUrlFromSupplement = async (songId) => {
             const levels = ['exhigh', 'higher', 'standard'];
             for (let i = 0; i < SUPPLEMENT_API_LIST.length; i++) {
@@ -1221,10 +1220,6 @@ createApp({
             if (sleepTimerId) { clearTimeout(sleepTimerId); sleepTimerId = null; playErrorMsg.value = '✅ 已取消睡眠定时'; setTimeout(() => { if (playErrorMsg.value === '✅ 已取消睡眠定时') playErrorMsg.value = ''; }, 2000); }
         };
 
-        /* ============================================================
-           ✅ 下载：优先走补充 API 的 https 地址，避开朋友 API 的 http/CORS 限制
-           播放、搜索、歌单、歌词、封面仍然走朋友的 Meting API
-           ============================================================ */
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src) { playErrorMsg.value = '没有正在播放的歌曲'; return; }
@@ -2130,15 +2125,32 @@ createApp({
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW注册失败', e));
             }
+            const tips = document.getElementById('tipsModal');
+            const showTips = () => {
+                if (!tips) return;
+                tips.style.display = 'flex';
+                const c = document.getElementById('closeTipsBtn');
+                const ok = document.getElementById('confirmTipsBtn');
+                const hideTips = () => { tips.style.display = 'none'; };
+                if (c) c.onclick = hideTips;
+                if (ok) ok.onclick = hideTips;
+                tips.onclick = (e) => { if (e.target === tips) hideTips(); };
+            };
+
             const ann = document.getElementById('announcementModal');
             if (ann) {
                 ann.style.display = 'flex';
                 const c = document.getElementById('closeAnnouncementBtn');
                 const ok = document.getElementById('confirmAnnouncementBtn');
-                const hide = () => ann.style.display = 'none';
-                if (c) c.onclick = hide;
-                if (ok) ok.onclick = hide;
-                ann.onclick = (e) => { if (e.target === ann) hide(); };
+                const hideAnn = () => {
+                    ann.style.display = 'none';
+                    showTips();
+                };
+                if (c) c.onclick = hideAnn;
+                if (ok) ok.onclick = hideAnn;
+                ann.onclick = (e) => { if (e.target === ann) hideAnn(); };
+            } else {
+                showTips();
             }
         });
 
