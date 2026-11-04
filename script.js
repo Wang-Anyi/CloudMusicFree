@@ -286,18 +286,10 @@ createApp({
             }
         };
 
-        /* ============================================================
-           朋友的 Meting API（主力：搜索 / 播放地址 / 歌词 / 封面）
-           注意：朋友 API 接的是他自己的账号池，VIP 歌曲能直接返回完整版
-           ============================================================ */
         const METING_BASE = 'https://musicapi.bixygames.com/api';
         const metingUrl = (type, id, extra = '') =>
             `${METING_BASE}?server=netease&type=${type}&id=${encodeURIComponent(id)}${extra}`;
 
-        /* ============================================================
-           补充 API（仅用于：歌曲详情、歌单详情、歌单全部歌曲、用户歌单）
-           Cookie 只在这里用，且只给 /user/ 和 /playlist/ 传
-           ============================================================ */
         const SUPPLEMENT_API_LIST = [
             'https://netease-cloud-music-api-five-roan-88.vercel.app',
             'https://music-api.heheda.top',
@@ -554,8 +546,10 @@ createApp({
         const applyBgImage = () => {
             if (bgImageUrl.value && bgImageUrl.value.trim()) {
                 document.body.style.background = `url(${bgImageUrl.value}) center center / cover no-repeat fixed`;
+                document.body.classList.add('custom-bg');
             } else {
                 document.body.style.background = '';
+                document.body.classList.remove('custom-bg');
             }
         };
 
@@ -701,6 +695,16 @@ createApp({
             }
         };
 
+        const splitBilingual = (text) => {
+            const m = text.match(/^(.*?)\s*[\(（\[【](.*?)[\)）\]】]\s*$/);
+            if (m) {
+                const original = m[1].trim();
+                const translation = m[2].trim();
+                if (original && translation) return { original, translation };
+            }
+            return { original: text, translation: '' };
+        };
+
         const parseLrc = (lrc) => {
             if (!lrc) return [];
             const result = [];
@@ -717,9 +721,12 @@ createApp({
                     times.push(min * 60 + sec + ms / 1000);
                 }
                 if (times.length === 0) continue;
-                const text = line.replace(/\[[^\]]*\]/g, '').trim();
-                if (!text) continue;
-                for (const t of times) result.push({ time: t, text });
+                const rawText = line.replace(/\[[^\]]*\]/g, '').trim();
+                if (!rawText) continue;
+                const { original, translation } = splitBilingual(rawText);
+                for (const t of times) {
+                    result.push({ time: t, text: original, trans: translation });
+                }
             }
             result.sort((a, b) => a.time - b.time);
             return result;
@@ -736,16 +743,19 @@ createApp({
             });
             return original.map(line => {
                 const key = line.time.toFixed(2);
-                return { time: line.time, text: line.text, trans: (transMap[key] || []).join(' / ') };
+                const extraTrans = (transMap[key] || []).join(' / ');
+                return {
+                    time: line.time,
+                    text: line.text,
+                    trans: line.trans || extraTrans
+                };
             });
         };
 
         const buildMergedLrc = (originalLrc, translatedLrc) => {
             if (!originalLrc) return '';
-            if (!translatedLrc) return originalLrc;
             const original = parseLrc(originalLrc);
-            const translated = parseLrc(translatedLrc);
-            if (!translated.length) return originalLrc;
+            const translated = translatedLrc ? parseLrc(translatedLrc) : [];
             const transMap = {};
             translated.forEach(t => {
                 const key = t.time.toFixed(2);
@@ -760,15 +770,13 @@ createApp({
             const lines = [];
             original.forEach(line => {
                 lines.push(fmt(line.time) + line.text);
+                if (line.trans) lines.push(fmt(line.time) + line.trans);
                 const key = line.time.toFixed(2);
                 if (transMap[key]) transMap[key].forEach(transText => lines.push(fmt(line.time) + transText));
             });
             return lines.join('\n');
         };
 
-        /* ============================================================
-           歌词：朋友的 Meting API type=lrc
-           ============================================================ */
         const fetchLyrics = async (songId) => {
             try {
                 const lrcUrl = metingUrl('lrc', songId);
@@ -866,7 +874,6 @@ createApp({
 
         watch(orientationMode, () => { checkMobileView(); });
 
-        /* ✅ Cookie 只给 /user/ 和 /playlist/ 传，其他接口不带 */
         const buildApiUrl = (apiBase, path) => {
             const needsCookie = path.startsWith('/user/') || path.startsWith('/playlist/');
             if (!needsCookie || !userCookie.value.trim()) return `${apiBase}${path}`;
@@ -926,9 +933,6 @@ createApp({
             }
         };
 
-        /* ============================================================
-           搜索：朋友的 Meting + 异步补充歌曲详情
-           ============================================================ */
         const enrichSongsWithDetail = async (songs) => {
             const ids = songs.map(s => s.id).filter(id => /^\d+$/.test(id));
             if (!ids.length) return;
@@ -983,10 +987,6 @@ createApp({
             }
         };
 
-        /* ============================================================
-           播放地址：朋友的 Meting 直接返回（VIP 也能完整）
-           补充 API 不参与播放地址，只用于歌曲详情
-           ============================================================ */
         const getSongUrl = async (songId, playUrl) => {
             if (playUrl) return playUrl;
             return metingUrl('url', songId);
@@ -1216,14 +1216,14 @@ createApp({
 
                 let lyricText = '';
                 if (currentLrcRaw.value) {
-                    lyricText = currentLrcRaw.value;
+                    lyricText = buildMergedLrc(currentLrcRaw.value, currentTLrcRaw.value);
                 }
                 if (!lyricText) {
                     try {
                         const lrcUrl = metingUrl('lrc', currentSongId);
                         const lrcRes = await axios.get(lrcUrl, { timeout: 10000 });
                         const text = typeof lrcRes.data === 'string' ? lrcRes.data : (lrcRes.data?.lyric || '');
-                        lyricText = text;
+                        lyricText = buildMergedLrc(text, '');
                     } catch (e) {}
                 }
 
@@ -1242,8 +1242,12 @@ createApp({
                 }
 
                 playErrorMsg.value = '⏳ 正在下载音频数据...';
-                const resp = await fetch(audio.src);
-                if (!resp.ok) throw new Error('音频下载失败');
+                const srcUrl = audio.src || '';
+                if (srcUrl.startsWith('http://') && location.protocol === 'https:') {
+                    throw new Error('音频地址是 http，https 页面无法下载。请让 API 提供方升级到 https');
+                }
+                const resp = await fetch(srcUrl);
+                if (!resp.ok) throw new Error('音频下载失败（HTTP ' + resp.status + '）');
                 const buffer = await resp.arrayBuffer();
 
                 playErrorMsg.value = '⏳ 正在写入歌曲信息...';
@@ -1687,6 +1691,7 @@ createApp({
                     if (s.customAccent) { customAccent.value = s.customAccent; applyCustomColors(); }
                     if (s.customBgStart) { customBgStart.value = s.customBgStart; applyCustomColors(); }
                     if (s.customBgEnd) { customBgEnd.value = s.customBgEnd; applyCustomColors(); }
+                    applyBgImage();
                     checkMobileView();
                     playErrorMsg.value = '✅ 设置导入成功';
                 } catch (err) { playErrorMsg.value = '❌ 导入失败'; }
@@ -1707,9 +1712,6 @@ createApp({
             }
         };
 
-        /* ============================================================
-           推荐歌单：补充 API
-           ============================================================ */
         const loadPlaylists = async () => {
             const allIds = [
                 '3778678',
@@ -1743,9 +1745,6 @@ createApp({
             ];
         };
 
-        /* ============================================================
-           歌单加载：补充 API
-           ============================================================ */
         const fetchPlaylistTracks = async (playlistId, plName, isCustom = false) => {
             searchResults.value = [];
             searchPerformed.value = true;
@@ -1883,9 +1882,6 @@ createApp({
             await fetchPlaylistTracks(id, `自定义歌单 ${id}`, true);
         };
 
-        /* ============================================================
-           我的歌单：补充 API（12 个兜底，Cookie 仅用于读歌单）
-           ============================================================ */
         let cachedUid = { uid: null, cookie: '' };
 
         const getMyUid = async () => {
@@ -1989,7 +1985,6 @@ createApp({
             hideVipModal();
         };
 
-        /* ✅ VIP 不再拦截，朋友的 API 能返回完整版，直接播放 */
         const handlePlayClick = (song) => {
             const sourceList = searchResults.value;
             if (sourceList && sourceList.length) {
@@ -2008,7 +2003,6 @@ createApp({
             playSongById(song.id, song.name, song.artist, song.picUrl, false, currentQueueIndex, !!song.isVip, song.playUrl || '');
         };
 
-        /* ✅ VIP 不再拦截，直接播放 */
         const parseById = async () => {
             const id = extractSongId(songIdInput.value);
             if (!id) return alert('请输入正确的歌曲ID或链接');
