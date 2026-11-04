@@ -992,6 +992,32 @@ createApp({
             return metingUrl('url', songId);
         };
 
+        /* ✅ 仅下载时使用：从补充 API 拿 https 音频地址 */
+        const getSongUrlFromSupplement = async (songId) => {
+            const levels = ['exhigh', 'higher', 'standard'];
+            for (let i = 0; i < SUPPLEMENT_API_LIST.length; i++) {
+                const apiBase = SUPPLEMENT_API_LIST[(currentApiIndex + i) % SUPPLEMENT_API_LIST.length];
+                if (!isApiAvailable(apiBase)) continue;
+                for (const lv of levels) {
+                    try {
+                        let url = `${apiBase}/song/url/v1?id=${songId}&level=${lv}`;
+                        if (userCookie.value.trim()) url += `&cookie=${encodeURIComponent(userCookie.value)}`;
+                        const res = await axios.get(url, { timeout: 12000 });
+                        const item = (res.data?.data || [])[0];
+                        const musicUrl = item?.url;
+                        if (musicUrl) {
+                            markApiOk(apiBase);
+                            currentApiIndex = (currentApiIndex + i) % SUPPLEMENT_API_LIST.length;
+                            return toHttps(musicUrl);
+                        }
+                    } catch (e) {
+                        markApiFailed(apiBase);
+                    }
+                }
+            }
+            return null;
+        };
+
         const getSongDetail = async (songId) => {
             for (let i = 0; i < SUPPLEMENT_API_LIST.length; i++) {
                 const apiBase = SUPPLEMENT_API_LIST[(currentApiIndex + i) % SUPPLEMENT_API_LIST.length];
@@ -1195,6 +1221,10 @@ createApp({
             if (sleepTimerId) { clearTimeout(sleepTimerId); sleepTimerId = null; playErrorMsg.value = '✅ 已取消睡眠定时'; setTimeout(() => { if (playErrorMsg.value === '✅ 已取消睡眠定时') playErrorMsg.value = ''; }, 2000); }
         };
 
+        /* ============================================================
+           ✅ 下载：优先走补充 API 的 https 地址，避开朋友 API 的 http/CORS 限制
+           播放、搜索、歌单、歌词、封面仍然走朋友的 Meting API
+           ============================================================ */
         const downloadCurrentSong = async () => {
             const audio = audioPlayer.value;
             if (!audio || !audio.src) { playErrorMsg.value = '没有正在播放的歌曲'; return; }
@@ -1202,6 +1232,8 @@ createApp({
 
             window.__downloading = true;
             playErrorMsg.value = '⏳ 正在准备下载...';
+
+            const safeName = (s) => String(s).replace(/[\\/:*?"<>|\n\r\t]/g, '_').slice(0, 100);
 
             try {
                 let songDetail = null;
@@ -1213,6 +1245,7 @@ createApp({
                 const album = songDetail?.al?.name || currentAlbum.value || '云音匣下载';
                 const year = songDetail?.publishTime ? String(new Date(songDetail.publishTime).getFullYear()) : String(new Date().getFullYear());
                 const trackNo = songDetail?.no ? String(songDetail.no) : '';
+                const fileName = `${safeName(artist)} - ${safeName(title)}.mp3`;
 
                 let lyricText = '';
                 if (currentLrcRaw.value) {
@@ -1225,6 +1258,17 @@ createApp({
                         const text = typeof lrcRes.data === 'string' ? lrcRes.data : (lrcRes.data?.lyric || '');
                         lyricText = buildMergedLrc(text, '');
                     } catch (e) {}
+                }
+
+                playErrorMsg.value = '⏳ 正在获取下载地址...';
+                let downloadUrl = await getSongUrlFromSupplement(currentSongId);
+                if (!downloadUrl) {
+                    downloadUrl = audio.src;
+                    playErrorMsg.value = '⏳ 补充 API 不可用，尝试当前播放地址...';
+                }
+
+                if (downloadUrl.startsWith('http://') && location.protocol === 'https:') {
+                    downloadUrl = 'https://' + downloadUrl.slice(7);
                 }
 
                 playErrorMsg.value = '⏳ 正在获取封面...';
@@ -1242,13 +1286,25 @@ createApp({
                 }
 
                 playErrorMsg.value = '⏳ 正在下载音频数据...';
-                const srcUrl = audio.src || '';
-                if (srcUrl.startsWith('http://') && location.protocol === 'https:') {
-                    throw new Error('音频地址是 http，https 页面无法下载。请让 API 提供方升级到 https');
+                let buffer = null;
+                try {
+                    const resp = await fetch(downloadUrl);
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    buffer = await resp.arrayBuffer();
+                } catch (fetchErr) {
+                    console.warn('[下载] fetch 失败，降级为原生下载:', fetchErr);
+                    const link = document.createElement('a');
+                    link.href = downloadUrl;
+                    link.download = fileName;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    playErrorMsg.value = '⚠️ 已触发浏览器原生下载（无封面/歌词标签）';
+                    setTimeout(() => { if (playErrorMsg.value.includes('下载')) playErrorMsg.value = ''; }, 5000);
+                    return;
                 }
-                const resp = await fetch(srcUrl);
-                if (!resp.ok) throw new Error('音频下载失败（HTTP ' + resp.status + '）');
-                const buffer = await resp.arrayBuffer();
 
                 playErrorMsg.value = '⏳ 正在写入歌曲信息...';
                 const writer = new window.ID3Writer(buffer);
@@ -1286,8 +1342,7 @@ createApp({
                 const blob = new Blob([writer.arrayBuffer], { type: 'audio/mpeg' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
-                const safeName = (s) => String(s).replace(/[\\/:*?"<>|\n\r\t]/g, '_').slice(0, 100);
-                link.download = `${safeName(artist)} - ${safeName(title)}.mp3`;
+                link.download = fileName;
                 link.href = url;
                 link.click();
                 setTimeout(() => URL.revokeObjectURL(url), 2000);
